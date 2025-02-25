@@ -34,6 +34,17 @@ from evennia.settings_default import *
 # This is the name of your game. Make it catchy!
 SERVERNAME = "fafo"
 
+# The next available block number for room groups
+NEXT_ROOM_BLOCK = 1
+
+# Global scripts configuration
+GLOBAL_SCRIPTS = {
+    "room_block_manager": {
+        "typeclass": "typeclasses.scripts.RoomBlockScript",
+        "persistent": True,
+        "desc": "Manages room block numbering"
+    }
+}
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

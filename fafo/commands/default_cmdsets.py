@@ -7,15 +7,47 @@ and merged onto entities at runtime.
 
 To create new commands to populate the cmdset, see
 `commands/command.py`.
-
-This module wraps the default command sets of Evennia; overloads them
-to add/remove commands from the default lineup. You can create your
-own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
-
 """
 
-from evennia import default_cmds
+from evennia import default_cmds, CmdSet
+from commands.builder import CmdBuildRoom, CmdBuildGrid, CmdBuildMaze
+from commands.compass import (CmdNorth, CmdSouth, CmdEast, CmdWest,
+                            CmdNortheast, CmdNorthwest, CmdSoutheast, CmdSouthwest)
 
+class CompassCmdSet(CmdSet):
+    """
+    This cmdset holds basic directional movement commands.
+    """
+    key = "CompassCmdSet"
+    priority = 0  # Lower priority so building commands take precedence
+    
+    def at_cmdset_creation(self):
+        """
+        Add basic movement commands that all characters should have
+        """
+        self.add(CmdNorth())
+        self.add(CmdSouth())
+        self.add(CmdEast())
+        self.add(CmdWest())
+        self.add(CmdNortheast())
+        self.add(CmdNorthwest())
+        self.add(CmdSoutheast())
+        self.add(CmdSouthwest())
+
+class BuilderCmdSet(CmdSet):
+    """
+    This cmdset holds builder commands for creating rooms and structures.
+    """
+    key = "BuilderCmdSet"
+    priority = 1  # Higher priority to override navigation commands if needed
+    
+    def at_cmdset_creation(self):
+        """
+        Add building commands that only builders should have
+        """
+        self.add(CmdBuildRoom())
+        self.add(CmdBuildGrid())
+        self.add(CmdBuildMaze())
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
     """
@@ -34,6 +66,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         #
         # any commands you add below will overload the default ones.
         #
+        self.add(CompassCmdSet)  # Add navigation commands (available to all)
+        self.add(BuilderCmdSet)  # Add builder commands (permission controlled)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

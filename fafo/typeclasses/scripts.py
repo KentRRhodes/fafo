@@ -101,3 +101,29 @@ class Script(DefaultScript):
     """
 
     pass
+
+
+"""
+Scripts for fafo.
+"""
+
+from evennia import DefaultScript
+
+class RoomBlockScript(DefaultScript):
+    """
+    Script for managing room block numbers.
+    This ensures block numbers persist across server reloads/restarts.
+    """
+    
+    def at_script_creation(self):
+        """Set up initial script attributes."""
+        self.key = "room_block_manager"
+        self.persistent = True  # Make sure it survives server reloads
+        # Initialize the next block number if not already set
+        self.db.next_block = self.db.next_block if self.db.next_block is not None else 1
+    
+    def get_next_block(self):
+        """Get and increment the next available block number."""
+        current = self.db.next_block
+        self.db.next_block = current + 1
+        return current
