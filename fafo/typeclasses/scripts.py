@@ -127,3 +127,125 @@ class RoomBlockScript(DefaultScript):
         current = self.db.next_block
         self.db.next_block = current + 1
         return current
+
+
+class CoordMapScript(DefaultScript):
+    """
+    Script for managing room coordinates and providing mapping functionality.
+    """
+    
+    def at_script_creation(self):
+        """Set up initial script attributes."""
+        self.key = "coord_map_manager"
+        self.persistent = True
+        # Initialize coordinate tracking
+        self.db.rooms = {}  # Format: {room.id: (x, y, z)}
+        # Track the bounds of the map
+        self.db.bounds = {
+            'min_x': 0, 'max_x': 0,
+            'min_y': 0, 'max_y': 0,
+            'min_z': 0, 'max_z': 0
+        }
+    
+    def set_room_coords(self, room, x, y, z=0):
+        """
+        Set coordinates for a room and update map bounds.
+        
+        Args:
+            room (Object): The room to set coordinates for
+            x (int): X coordinate
+            y (int): Y coordinate
+            z (int): Z coordinate (default: 0)
+        """
+        # Store coordinates both in script and on room
+        self.db.rooms[room.id] = (x, y, z)
+        room.db.coordinates = {'x': x, 'y': y, 'z': z}
+        
+        # Update bounds
+        self.db.bounds['min_x'] = min(self.db.bounds['min_x'], x)
+        self.db.bounds['max_x'] = max(self.db.bounds['max_x'], x)
+        self.db.bounds['min_y'] = min(self.db.bounds['min_y'], y)
+        self.db.bounds['max_y'] = max(self.db.bounds['max_y'], y)
+        self.db.bounds['min_z'] = min(self.db.bounds['min_z'], z)
+        self.db.bounds['max_z'] = max(self.db.bounds['max_z'], z)
+    
+    def get_room_coords(self, room):
+        """
+        Get coordinates for a room.
+        
+        Args:
+            room (Object): The room to get coordinates for
+            
+        Returns:
+            tuple: (x, y, z) coordinates or None if not set
+        """
+        if not room or not room.id:
+            return None
+            
+        return self.db.rooms.get(room.id)
+    
+    def get_room_at_coords(self, x, y, z=0):
+        """
+        Find a room at specific coordinates.
+        
+        Args:
+            x (int): X coordinate
+            y (int): Y coordinate
+            z (int): Z coordinate (default: 0)
+            
+        Returns:
+            Object or None: Room at coordinates if found
+        """
+        from evennia import ObjectDB
+        
+        for room_id, coords in self.db.rooms.items():
+            if coords == (x, y, z):
+                try:
+                    return ObjectDB.objects.get(id=room_id)
+                except ObjectDB.DoesNotExist:
+                    # Room no longer exists, clean up our tracking
+                    del self.db.rooms[room_id]
+        return None
+    
+    def calculate_next_coords(self, base_room, direction):
+        """
+        Calculate the next coordinates in a given direction.
+        
+        Args:
+            base_room (Object): The starting room
+            direction (str): Direction to move
+            
+        Returns:
+            tuple: (x, y, z) for new coordinates
+        """
+        current_coords = self.get_room_coords(base_room) or (0, 0, 0)
+        x, y, z = current_coords
+        
+        # Direction mapping
+        direction = direction.lower()
+        if direction in ['north', 'n']:
+            y += 1
+        elif direction in ['south', 's']:
+            y -= 1
+        elif direction in ['east', 'e']:
+            x += 1
+        elif direction in ['west', 'w']:
+            x -= 1
+        elif direction in ['northeast', 'ne']:
+            x += 1
+            y += 1
+        elif direction in ['northwest', 'nw']:
+            x -= 1
+            y += 1
+        elif direction in ['southeast', 'se']:
+            x += 1
+            y -= 1
+        elif direction in ['southwest', 'sw']:
+            x -= 1
+            y -= 1
+        elif direction == 'up':
+            z += 1
+        elif direction == 'down':
+            z -= 1
+            
+        return (x, y, z)

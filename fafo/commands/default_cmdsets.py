@@ -10,7 +10,8 @@ To create new commands to populate the cmdset, see
 """
 
 from evennia import default_cmds, CmdSet
-from commands.builder import CmdBuildRoom, CmdBuildGrid, CmdBuildMaze
+from commands.builder import (CmdBuildRoom, CmdBuildGrid, CmdBuildMaze, 
+                            CmdInitCoords, CmdCheckCoords, CmdDeleteBlock)
 from commands.compass import (CmdNorth, CmdSouth, CmdEast, CmdWest,
                             CmdNortheast, CmdNorthwest, CmdSoutheast, CmdSouthwest)
 
@@ -45,6 +46,9 @@ class BuilderCmdSet(CmdSet):
         """
         Add building commands that only builders should have
         """
+        self.add(CmdInitCoords())
+        self.add(CmdCheckCoords())
+        self.add(CmdDeleteBlock())
         self.add(CmdBuildRoom())
         self.add(CmdBuildGrid())
         self.add(CmdBuildMaze())

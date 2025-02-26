@@ -43,6 +43,11 @@ GLOBAL_SCRIPTS = {
         "typeclass": "typeclasses.scripts.RoomBlockScript",
         "persistent": True,
         "desc": "Manages room block numbering"
+    },
+    "coord_map_manager": {
+        "typeclass": "typeclasses.scripts.CoordMapScript",
+        "persistent": True,
+        "desc": "Manages room coordinate system"
     }
 }
 
