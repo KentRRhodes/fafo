@@ -1,10 +1,10 @@
 {
-    "mineral_vein": {
-        "name": "Mineral Vein",
-        "description": "A rich vein of various minerals"
+    "sample_resource_region1": {
+        "name": "sample resource region 1",
+        "description": "blah blah blah"
     },
-    "herb_garden": {
-        "name": "Herb Garden",
-        "description": "A fertile area rich in medicinal plants"
+    "sample_resource_region2": {
+        "name": "sample resource region 2",
+        "description": "blah blah blah blah"
     }
 }

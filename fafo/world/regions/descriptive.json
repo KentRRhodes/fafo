@@ -1,11 +1,10 @@
 {
-    "sample": {},
-    "dark_forest": {
-        "name": "Dark Forest",
-        "description": "Ancient trees loom overhead, their thick canopy blocking most of the light. The air is heavy with the scent of moss and decay."
+    "spawn": {
+        "name": "Spawn",
+        "description": "Default Spawn Region"
         },
-    "desert_waste": {
-        "name": "Desert Wasteland",
-        "description": "An endless expanse of sand dunes stretches to the horizon. The air shimmers with heat."
+    "region1": {
+        "name": "Some Region",
+        "description": "Sample Descriptive Region 1"
     }
 }

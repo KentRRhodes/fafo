@@ -1,10 +1,10 @@
 {
-    "wolf_den": {
-        "name": "Wolf Den",
-        "description": "An area frequently patrolled by wolves"
+    "sample_spawning_region1": {
+        "name": "sample spawning region 1",
+        "description": "blah blah blah"
     },
-    "goblin_camp": {
-        "name": "Goblin Encampment",
-        "description": "A region where goblins have set up camp"
+    "sample_spawing_region2": {
+        "name": "sample spawning region 2",
+        "description": "blah blah blah blah"
     }
 }

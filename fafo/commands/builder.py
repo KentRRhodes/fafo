@@ -5,6 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from evennia import create_object, DefaultExit, search_tag
 from evennia.commands.default.building import ObjManipCommand
 from evennia import settings, GLOBAL_SCRIPTS
+from evennia.utils import evtable
 import random
 
 def get_next_block_number():
@@ -103,6 +104,55 @@ def set_room_block(room, block_num):
     # Add new block tag
     room.tags.add(f"room_block_{block_num}", category="room_block")
 
+def get_descriptive_regions():
+    """Get a list of available descriptive regions"""
+    region_manager = GLOBAL_SCRIPTS.region_manager
+    if not region_manager:
+        return []
+    region_handler = getattr(region_manager.ndb, "descriptive", None)
+    if not region_handler:
+        return []
+    return region_handler.list_regions()
+
+def show_region_selection(caller):
+    """Show numbered list of regions and return selected region ID"""
+    regions = get_descriptive_regions()
+    if not regions:
+        caller.msg("No descriptive regions defined. Use addregion/list descriptive to view available regions.")
+        return None
+        
+    # Display numbered list using evtable
+    table = evtable.EvTable("#", "ID", "Name", "Description")
+    for i, region_id in enumerate(regions, 1):
+        region_data = GLOBAL_SCRIPTS.region_manager.ndb.descriptive.get_region(region_id)
+        if region_data:
+            name = region_data.get('name', region_id)
+            desc = region_data.get('description', '').split('\n')[0][:40]
+            table.add_row(str(i), region_id, name, desc)
+    
+    caller.msg("\nAvailable Descriptive Regions:")
+    caller.msg(str(table))
+    return regions
+
+def select_region(caller, selection, regions):
+    """Convert selection to region ID"""
+    if not selection:
+        return None
+        
+    if selection.isdigit():
+        try:
+            index = int(selection) - 1
+            if 0 <= index < len(regions):
+                return regions[index]
+        except (ValueError, IndexError):
+            pass
+            
+    # Check if selection is a valid region ID
+    if selection in regions:
+        return selection
+        
+    return None
+
 class CmdBuildRoom(ObjManipCommand):
     """
     Build a single room in a given direction or at specific coordinates.
@@ -115,14 +165,7 @@ class CmdBuildRoom(ObjManipCommand):
     1. One step in the given direction from your current location
     2. At the specific coordinates provided
 
-    If using coordinates, z is optional and defaults to your current z-coordinate.
-    The room will be connected to your current location if coordinates are adjacent.
-
-    Example:
-      buildroom north
-      buildroom southwest
-      buildroom 997 1000 901
-      buildroom 997 1000
+    You will be prompted to select a descriptive region for the new room.
     """
 
     key = "buildroom"
@@ -144,6 +187,8 @@ class CmdBuildRoom(ObjManipCommand):
     def func(self):
         """Create the room."""
         caller = self.caller
+        
+        # Validate initial arguments before region selection
         if not self.args:
             caller.msg("Usage: buildroom <direction> OR buildroom <x> <y> [z]")
             return
@@ -152,11 +197,21 @@ class CmdBuildRoom(ObjManipCommand):
             caller.msg("You must be in a room to build!")
             return
 
-        # Get coordinate manager
-        coord_map = get_coord_map()
-        created_room = None  # Will store reference to created room
+        # Show region selection and get input
+        regions = show_region_selection(caller)
+        if not regions:
+            return
+            
+        # Get region selection from user
+        region_id = yield("Enter region selection (number or ID):")
         
-        # Parse arguments
+        # Convert selection to region ID
+        region_id = select_region(caller, region_id, regions)
+        if not region_id:
+            caller.msg("Invalid region selection. Please select a valid number or region ID.")
+            return
+            
+        # Continue with original room creation logic using self.args
         args = self.args.strip().split()
         
         # Check if we're dealing with coordinates
@@ -305,19 +360,23 @@ class CmdBuildRoom(ObjManipCommand):
         elif created_room:
             caller.msg("Warning: Could not move to new room - room creation may have failed.")
 
+        # After room is created, set its region
+        if created_room and created_room.pk:
+            created_room.db.regions = {
+                'descriptive': region_id,
+                'spawning': None,
+                'resource': None
+            }
+
 class CmdBuildGrid(ObjManipCommand):
     """
     Build a grid of rooms in given dimensions.
 
     Usage:
-      buildgrid <direction> <number> <direction2> <number2> [connect]
+      buildgrid <region> <direction> <number> <direction2> <number2> [connect]
 
-    Creates a grid of rooms extending in two directions. If 'connect' is specified,
-    automatically creates exits to any existing adjacent rooms outside the grid.
-
-    Example:
-      buildgrid west 4 north 3
-      buildgrid south 2 east 5 connect
+    Creates a grid of rooms extending in two directions. Region must be specified
+    first either as a number from the list or a region ID.
     """
 
     key = "buildgrid"
@@ -327,15 +386,33 @@ class CmdBuildGrid(ObjManipCommand):
     def func(self):
         """Create the grid of rooms."""
         caller = self.caller
+        
+        # Validate initial arguments before region selection
         if not self.args:
             caller.msg("Usage: buildgrid <direction> <number> <direction2> <number2> [connect]")
             return
-
-        args = self.args.split()
+            
+        args = self.args.strip().split()
         if len(args) < 4:
             caller.msg("Usage: buildgrid <direction> <number> <direction2> <number2> [connect]")
             return
 
+        # Show region selection and get input 
+        regions = show_region_selection(caller)
+        if not regions:
+            return
+            
+        # Get region selection from user
+        caller.msg("Enter region selection (number or ID):")
+        region_id = yield("text")
+        
+        # Convert selection to region ID
+        region_id = select_region(caller, region_id, regions)
+        if not region_id:
+            caller.msg("Invalid region selection. Please select a valid number or region ID.")
+            return
+            
+        # Continue with original grid creation logic using args
         dir1, num1, dir2, num2 = args[:4]
         force_connections = "connect" in args[4:] if len(args) > 4 else False
 
@@ -541,19 +618,23 @@ class CmdBuildGrid(ObjManipCommand):
 
         caller.msg(f"Created a grid {num1}x{num2} rooms extending {dir1} and {dir2} (block #{block_num}).")
 
+        # Set region on all created rooms
+        for room in first_row:
+            room.db.regions = {
+                'descriptive': region_id,
+                'spawning': None,
+                'resource': None
+            }
+
 class CmdBuildMaze(ObjManipCommand):
     """
     Build a randomly connected maze of rooms.
 
     Usage:
-      buildmaze <direction> <number> [connect]
+      buildmaze <region> <direction> <number> [connect]
 
-    Creates a collection of randomly connected rooms. If 'connect' is specified,
-    automatically creates exits to any existing adjacent rooms outside the maze.
-
-    Example:
-      buildmaze north 10
-      buildmaze west 5 connect
+    Creates a collection of randomly connected rooms. Region must be specified
+    first either as a number from the list or a region ID.
     """
 
     key = "buildmaze"
@@ -613,6 +694,7 @@ class CmdBuildMaze(ObjManipCommand):
             return
             
         exclude_rooms = exclude_rooms or []
+        dir_map = {v: k for k, v in self.dir_map.items()}  # Reverse mapping for getting short forms
         
         # Get all rooms from coord_map
         for room_id, coords in coord_map.db.rooms.items():
@@ -629,19 +711,25 @@ class CmdBuildMaze(ObjManipCommand):
                 for direction, opposite in self.opposites.items():
                     test_coords = coord_map.calculate_next_coords(existing_room, direction)
                     if test_coords == room_coords:
-                        # Found the correct direction
+                        # Found the correct direction - create aliases for both directions
                         dir_aliases = []
-                        dir_short = self.dir_map.get(direction)
-                        if dir_short:
-                            dir_aliases.append(dir_short)
+                        back_aliases = []
+                        
+                        # Add appropriate aliases for each direction
+                        # Forward exit aliases
+                        if direction in dir_map:  # If this is a long form
+                            dir_aliases.append(dir_map[direction])  # Add short form
+                        elif direction in self.dir_map:  # If this is a short form
+                            dir_aliases.append(self.dir_map[direction])  # Add long form
                             
+                        # Return exit aliases
+                        if opposite in dir_map:  # If this is a long form
+                            back_aliases.append(dir_map[opposite])  # Add short form
+                        elif opposite in self.dir_map:  # If this is a short form 
+                            back_aliases.append(self.dir_map[opposite])  # Add long form
+                        
+                        # Create the exits with proper aliases
                         if create_exit_if_none(direction, dir_aliases, existing_room, room):
-                            # Create return exit
-                            back_aliases = []
-                            back_short = self.dir_map.get(opposite)
-                            if back_short:
-                                back_aliases.append(back_short)
-                                
                             create_exit_if_none(opposite, back_aliases, room, existing_room)
                         break
 
@@ -650,15 +738,33 @@ class CmdBuildMaze(ObjManipCommand):
         import random
         
         caller = self.caller
+        
+        # Validate initial arguments before region selection
         if not self.args:
             caller.msg("Usage: buildmaze <direction> <number> [connect]")
             return
-
-        args = self.args.split()
+            
+        args = self.args.strip().split()
         if len(args) < 2:
             caller.msg("Usage: buildmaze <direction> <number> [connect]")
             return
 
+        # Show region selection and get input
+        regions = show_region_selection(caller)
+        if not regions:
+            return
+            
+        # Get region selection from user
+        caller.msg("Enter region selection (number or ID):")
+        region_id = yield("text")
+        
+        # Convert selection to region ID
+        region_id = select_region(caller, region_id, regions)
+        if not region_id:
+            caller.msg("Invalid region selection. Please select a valid number or region ID.")
+            return
+            
+        # Continue with original maze creation logic using args
         direction, number = args[:2]
         force_connections = "connect" in args[2:] if len(args) > 2 else False
         
@@ -814,6 +920,14 @@ class CmdBuildMaze(ObjManipCommand):
                             break
 
         caller.msg(f"Created a maze of {len(created_rooms)} rooms starting {full_direction} (block #{block_num}).")
+
+        # Set region on all created rooms
+        for room in created_rooms:
+            room.db.regions = {
+                'descriptive': region_id,
+                'spawning': None, 
+                'resource': None
+            }
 
 class CmdInitCoords(ObjManipCommand):
     """
@@ -1092,7 +1206,7 @@ class CmdAddRegion(ObjManipCommand):
                 return
 
             # Get details for each region with numbered index
-            table = self.styled_table("#", "ID", "Name", "Description")
+            table = evtable.EvTable("#", "ID", "Name", "Description", width=78)
             for i, region_id in enumerate(regions, 1):
                 region_data = region_handler.get_region(region_id)
                 if region_data:
@@ -1101,7 +1215,7 @@ class CmdAddRegion(ObjManipCommand):
                     table.add_row(str(i), region_id, name, desc)
             
             caller.msg(f"\n{region_type.title()} Regions:")
-            caller.msg(table)
+            caller.msg(str(table))
             caller.msg("\nUse region number or ID when adding a region.")
             return
 
