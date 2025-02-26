@@ -249,3 +249,85 @@ class CoordMapScript(DefaultScript):
             z -= 1
             
         return (x, y, z)
+
+
+class RegionManagerScript(DefaultScript):
+    """
+    Script for managing region assignments and data.
+    """
+    
+    def at_script_creation(self):
+        """Set up initial script attributes."""
+        self.key = "region_manager"
+        self.persistent = True
+        self.desc = "Manages region assignments and data"
+        
+        from world.regions.manager import RegionManager
+        from world.regions import DESCRIPTIVE_PATH, SPAWNING_PATH, RESOURCE_PATH
+        
+        # Initialize region managers
+        self.ndb.descriptive = RegionManager("descriptive", DESCRIPTIVE_PATH)
+        self.ndb.spawning = RegionManager("spawning", SPAWNING_PATH)
+        self.ndb.resource = RegionManager("resource", RESOURCE_PATH)
+    
+    def at_server_reload(self):
+        """Refresh region data on server reload."""
+        from world.regions.manager import RegionManager
+        from world.regions import DESCRIPTIVE_PATH, SPAWNING_PATH, RESOURCE_PATH
+        
+        # Reinitialize region managers
+        self.ndb.descriptive = RegionManager("descriptive", DESCRIPTIVE_PATH)
+        self.ndb.spawning = RegionManager("spawning", SPAWNING_PATH) 
+        self.ndb.resource = RegionManager("resource", RESOURCE_PATH)
+    
+    def at_server_start(self):
+        """Initialize on server start."""
+        self.at_server_reload()
+    
+    def add_region_to_room(self, room, region_type, region_id):
+        """
+        Add a region to a room.
+        
+        Args:
+            room (Object): Room to add region to
+            region_type (str): Type of region ("descriptive", "spawning", "resource")
+            region_id (str): ID of region to add
+        """
+        manager = getattr(self.ndb, region_type, None)
+        if not manager:
+            raise ValueError(f"Invalid region type: {region_type}")
+            
+        return manager.apply_to_room(room, region_id)
+    
+    def remove_region_from_room(self, room, region_type, region_id=None):
+        """
+        Remove a region (or all regions of a type) from a room.
+        
+        Args:
+            room (Object): Room to remove region from
+            region_type (str): Type of region ("descriptive", "spawning", "resource")
+            region_id (str, optional): Specific region ID to remove, or None for all of type
+        """
+        manager = getattr(self.ndb, region_type, None)
+        if not manager:
+            raise ValueError(f"Invalid region type: {region_type}")
+            
+        if region_id:
+            # Remove specific region
+            return manager.remove_from_room(room, region_id)
+        else:
+            # For descriptive regions, remove the single region if it exists
+            if region_type == "descriptive":
+                current_region = getattr(room.db, manager._get_descriptor_name(), None)
+                if current_region:
+                    return manager.remove_from_room(room, current_region)
+            # For spawning/resource regions, remove all regions of that type
+            else:
+                attr_name = manager._get_descriptor_name()
+                regions = getattr(room.db, attr_name, set()).copy()
+                success = False
+                for rid in regions:
+                    if manager.remove_from_room(room, rid):
+                        success = True
+                return success
+            return False

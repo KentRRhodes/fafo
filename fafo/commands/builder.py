@@ -1020,3 +1020,201 @@ class CmdDeleteBlock(ObjManipCommand):
                 continue
             
         caller.msg(f"Deleted block {block_num}: {rooms_deleted} rooms and {exit_count} exits removed.")
+
+class CmdAddRegion(ObjManipCommand):
+    """
+    Add a region to a room or block of rooms.
+
+    Usage:
+      addregion <type> [#|region_id] [block #]
+      addregion/list <type>
+      addregion/remove <type> [region_id]
+
+    Arguments:
+        type - Type of region (descriptive, spawning, resource)
+        #|region_id - Region number from list or ID (e.g. "1" or "dark_forest")
+        block # - Optional block number to apply region to all rooms in that block
+        region_id - ID of specific region to remove (if omitting, removes all of type)
+
+    Switches:
+        list - Show available regions of the specified type
+        remove - Remove region(s) instead of adding
+        force - Skip confirmation for large block operations
+
+    Examples:
+        addregion/list descriptive     - List all available descriptive regions
+        addregion descriptive 1        - Add first listed descriptive region
+        addregion descriptive dark_forest  - Add specific region by ID
+        addregion spawning 2 5         - Add second spawning region to block 5
+        addregion/remove resource      - Remove all resource regions from current room
+    """
+
+    key = "addregion"
+    locks = "cmd:perm(build) or perm(Builder)"
+    help_category = "Building"
+    
+    def func(self):
+        """Implement the command"""
+        caller = self.caller
+        region_types = ["descriptive", "spawning", "resource"]
+
+        if not self.args:
+            caller.msg("Usage: addregion <type> [#|region_id] [block #]")
+            caller.msg(f"Valid types: {', '.join(region_types)}")
+            return
+
+        args = self.args.strip().split()
+        if not args:
+            return
+
+        region_type = args[0].lower()
+        if region_type not in region_types:
+            caller.msg(f"Invalid region type. Must be one of: {', '.join(region_types)}")
+            return
+
+        # Get region manager script
+        region_manager = GLOBAL_SCRIPTS.region_manager
+        if not region_manager:
+            caller.msg("Error: Region manager not found!")
+            return
+
+        # Get correct region handler based on type
+        region_handler = getattr(region_manager.ndb, region_type, None)
+        if not region_handler:
+            caller.msg(f"Error: No handler found for {region_type} regions!")
+            return
+
+        # Handle list switch
+        if "list" in self.switches:
+            regions = region_handler.list_regions()
+            if not regions:
+                caller.msg(f"No {region_type} regions defined.")
+                return
+
+            # Get details for each region with numbered index
+            table = self.styled_table("#", "ID", "Name", "Description")
+            for i, region_id in enumerate(regions, 1):
+                region_data = region_handler.get_region(region_id)
+                if region_data:
+                    name = region_data.get('name', region_id)
+                    desc = region_data.get('description', '').split('\n')[0][:40]  # First line, truncated
+                    table.add_row(str(i), region_id, name, desc)
+            
+            caller.msg(f"\n{region_type.title()} Regions:")
+            caller.msg(table)
+            caller.msg("\nUse region number or ID when adding a region.")
+            return
+
+        # Handle remove switch
+        if "remove" in self.switches:
+            # Get specific region ID if provided
+            region_id = args[1] if len(args) > 1 else None
+            
+            # Determine target rooms
+            if len(args) > 1 and args[1].isdigit():  # If block number provided
+                block_num = int(args[1])
+                from evennia import search_tag
+                rooms = search_tag(f"room_block_{block_num}", category="room_block")
+                if not rooms:
+                    caller.msg(f"No rooms found in block {block_num}.")
+                    return
+                target_rooms = rooms
+            else:  # Current room only
+                if not caller.location:
+                    caller.msg("You must be in a room!")
+                    return
+                target_rooms = [caller.location]
+
+            # Remove region(s)
+            for room in target_rooms:
+                result = region_manager.remove_region_from_room(room, region_type, region_id)
+                if result and len(target_rooms) == 1:
+                    msg = f"Removed {region_type} region"
+                    msg += f" '{region_id}'" if region_id else "s"
+                    msg += f" from {room.get_display_name(caller)}"
+                    caller.msg(msg)
+
+            if len(target_rooms) > 1:
+                caller.msg(f"Removed {region_type} region(s) from {len(target_rooms)} rooms in block {block_num}.")
+            return
+
+        # Normal add region mode
+        if len(args) < 2:  # Need to show available regions and prompt for choice
+            regions = region_handler.list_regions()
+            if not regions:
+                caller.msg(f"No {region_type} regions defined.")
+                return
+
+            # Show available regions and prompt with numbers
+            table = self.styled_table("#", "ID", "Name", "Description")
+            for i, region_id in enumerate(regions, 1):
+                region_data = region_handler.get_region(region_id)
+                if region_data:
+                    name = region_data.get('name', region_id)
+                    desc = region_data.get('description', '').split('\n')[0][:40]
+                    table.add_row(str(i), region_id, name, desc)
+            
+            caller.msg(f"\nAvailable {region_type.title()} Regions:")
+            caller.msg(table)
+            caller.msg("\nUsage: addregion <type> <#|region_id> [block #]")
+            return
+
+        # Process region addition
+        region_id = args[1]
+        regions = region_handler.list_regions()
+        
+        # Handle numeric selection
+        if region_id.isdigit():
+            try:
+                index = int(region_id) - 1
+                if 0 <= index < len(regions):
+                    region_id = regions[index]
+                else:
+                    caller.msg(f"Invalid region number. Choose 1-{len(regions)}.")
+                    return
+            except (ValueError, IndexError):
+                caller.msg(f"Invalid region number. Choose 1-{len(regions)}.")
+                return
+        
+        # Check if region exists
+        if not region_handler.get_region(region_id):
+            caller.msg(f"Region '{region_id}' not found!")
+            return
+
+        # Handle block specification
+        if len(args) > 2 and args[2].isdigit():
+            block_num = int(args[2])
+            from evennia import search_tag
+            rooms = search_tag(f"room_block_{block_num}", category="room_block")
+            if not rooms:
+                caller.msg(f"No rooms found in block {block_num}.")
+                return
+            
+            # Verify action for multiple rooms
+            if len(rooms) > 10 and "force" not in self.switches:
+                caller.msg(f"This will add the {region_type} region '{region_id}' to {len(rooms)} rooms.")
+                caller.msg("Use /force switch to skip this warning.")
+                return
+                
+            success_count = 0
+            for room in rooms:
+                try:
+                    if region_manager.add_region_to_room(room, region_type, region_id):
+                        success_count += 1
+                except Exception as e:
+                    caller.msg(f"Error adding region to {room.get_display_name(caller)}: {str(e)}")
+            
+            caller.msg(f"Added {region_type} region '{region_id}' to {success_count} rooms in block {block_num}.")
+            
+        else:  # Single room mode
+            if not caller.location:
+                caller.msg("You must be in a room!")
+                return
+                
+            try:
+                if region_manager.add_region_to_room(caller.location, region_type, region_id):
+                    caller.msg(f"Added {region_type} region '{region_id}' to {caller.location.get_display_name(caller)}.")
+                else:
+                    caller.msg("Failed to add region.")
+            except Exception as e:
+                caller.msg(f"Error: {str(e)}")

@@ -290,6 +290,47 @@ deleteblock 5      # Deletes block #5 (with confirmation if >10 rooms)
 deleteblock 7/force  # Delete block 7 without confirmation
 ```
 
+### CmdAddRegion
+Add a region to a room or block of rooms.
+
+**Usage:**
+```
+addregion <type> [#|region_id] [block #]
+addregion/list <type>
+addregion/remove <type> [region_id]
+```
+
+**Arguments:**
+- type - Type of region (descriptive, spawning, resource)
+- #|region_id - Region number from list or ID (e.g. "1" or "dark_forest")
+- block # - Optional block number to apply region to all rooms in that block
+- region_id - ID of specific region to remove (if omitting, removes all of type)
+
+**Switches:**
+- /list - Show available regions of the specified type
+- /remove - Remove region(s) instead of adding
+- /force - Skip confirmation for large block operations
+
+**Example Usage:**
+```
+addregion/list descriptive     # List numbered descriptive regions
+addregion descriptive 1        # Add first listed descriptive region
+addregion descriptive dark_forest  # Add specific region by ID
+addregion spawning 2 5        # Add second spawning region to block 5
+addregion/remove resource     # Remove all resource regions from current room
+```
+
+**List Format:**
+The /list switch now displays regions in a numbered table:
+```
+# | ID           | Name         | Description
+--+-------------+-------------+------------
+1 | dark_forest | Dark Forest | Ancient trees loom overhead...
+2 | desert_waste| Desert      | An endless expanse of sand...
+```
+
+Numbers can be used instead of IDs for easier region selection.
+
 ## Navigation System
 
 ### CompassCommand

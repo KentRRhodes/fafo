@@ -48,6 +48,11 @@ GLOBAL_SCRIPTS = {
         "typeclass": "typeclasses.scripts.CoordMapScript",
         "persistent": True,
         "desc": "Manages room coordinate system"
+    },
+    "region_manager": {
+        "typeclass": "typeclasses.scripts.RegionManagerScript",
+        "persistent": True,
+        "desc": "Manages region assignments and types"
     }
 }
 

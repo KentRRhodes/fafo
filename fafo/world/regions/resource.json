@@ -1,0 +1,10 @@
+{
+    "mineral_vein": {
+        "name": "Mineral Vein",
+        "description": "A rich vein of various minerals"
+    },
+    "herb_garden": {
+        "name": "Herb Garden",
+        "description": "A fertile area rich in medicinal plants"
+    }
+}

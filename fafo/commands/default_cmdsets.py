@@ -11,7 +11,8 @@ To create new commands to populate the cmdset, see
 
 from evennia import default_cmds, CmdSet
 from commands.builder import (CmdBuildRoom, CmdBuildGrid, CmdBuildMaze, 
-                            CmdInitCoords, CmdCheckCoords, CmdDeleteBlock)
+                            CmdInitCoords, CmdCheckCoords, CmdDeleteBlock,
+                            CmdAddRegion)
 from commands.compass import (CmdNorth, CmdSouth, CmdEast, CmdWest,
                             CmdNortheast, CmdNorthwest, CmdSoutheast, CmdSouthwest)
 
@@ -52,6 +53,7 @@ class BuilderCmdSet(CmdSet):
         self.add(CmdBuildRoom())
         self.add(CmdBuildGrid())
         self.add(CmdBuildMaze())
+        self.add(CmdAddRegion())
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
     """

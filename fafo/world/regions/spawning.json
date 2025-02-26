@@ -1,0 +1,10 @@
+{
+    "wolf_den": {
+        "name": "Wolf Den",
+        "description": "An area frequently patrolled by wolves"
+    },
+    "goblin_camp": {
+        "name": "Goblin Encampment",
+        "description": "A region where goblins have set up camp"
+    }
+}
