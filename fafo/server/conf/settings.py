@@ -53,6 +53,11 @@ GLOBAL_SCRIPTS = {
         "typeclass": "typeclasses.scripts.RegionManagerScript",
         "persistent": True,
         "desc": "Manages region assignments and types"
+    },
+    "combat_handler": {
+        "typeclass": "scripts.combat_handler.CombatHandler",
+        "persistent": True,
+        "desc": "Handles combat mechanics"
     }
 }
 

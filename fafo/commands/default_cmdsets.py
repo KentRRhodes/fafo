@@ -15,6 +15,7 @@ from commands.builder import (CmdBuildRoom, CmdBuildGrid, CmdBuildMaze,
                             CmdAddRegion)
 from commands.compass import (CmdNorth, CmdSouth, CmdEast, CmdWest,
                             CmdNortheast, CmdNorthwest, CmdSoutheast, CmdSouthwest)
+from commands.combat import CmdKill
 
 class CompassCmdSet(CmdSet):
     """
@@ -55,6 +56,19 @@ class BuilderCmdSet(CmdSet):
         self.add(CmdBuildMaze())
         self.add(CmdAddRegion())
 
+class CombatCmdSet(CmdSet):
+    """
+    Holds commands related to the combat system.
+    """
+    key = "CombatCmdSet"
+    priority = 1  # Higher than default to override potential name conflicts
+    
+    def at_cmdset_creation(self):
+        """
+        Add combat commands to the set.
+        """
+        self.add(CmdKill())
+
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
     """
     The `CharacterCmdSet` contains general in-game commands like `look`,
@@ -74,7 +88,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         #
         self.add(CompassCmdSet)  # Add navigation commands (available to all)
         self.add(BuilderCmdSet)  # Add builder commands (permission controlled)
-
+        self.add(CmdKill())
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
     """

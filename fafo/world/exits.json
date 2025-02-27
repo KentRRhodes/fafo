@@ -1,0 +1,40 @@
+{
+    "degradation_rate": 1,
+    "wear_levels": {
+        "0": {
+            "patterns": [
+                "a faint trail to the {direction}",
+                "some faint footprints disappearing {direction}",
+                "barely visible tracks leading {direction}"
+            ]
+        },
+        "10": {
+            "patterns": [
+                "a narrow path heading {direction}",
+                "a rough trail leading {direction}",
+                "trampled grass heading {direction}"
+            ]
+        },
+        "25": {
+            "patterns": [
+                "an overgrown path to the {direction}",
+                "a dirt trail winding {direction}",
+                "a well-worn track leading {direction}"
+            ]
+        },
+        "50": {
+            "patterns": [
+                "a well-trodden path to the {direction}",
+                "a clear trail heading {direction}",
+                "a frequently used path leading {direction}"
+            ]
+        },
+        "100": {
+            "patterns": [
+                "a wide road extending {direction}",
+                "a heavily traveled path to the {direction}",
+                "a broad thoroughfare heading {direction}"
+            ]
+        }
+    }
+}

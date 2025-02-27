@@ -1,21 +1,18 @@
 """
-Characters
+Monsters
 
-Characters are (by default) Objects setup to be puppeted by Accounts.
-They are what you "see" in game. The Character class in this module
-is setup to be the "default" character type created by the default
-creation commands.
-
+Hostile NPCs that can engage in combat with players.
+This module contains various monster types and base classes.
 """
 from evennia.objects.objects import DefaultCharacter
 from evennia.typeclasses.attributes import AttributeProperty
-from evennia import GLOBAL_SCRIPTS, random
 from .objects import ObjectParent
+from evennia import GLOBAL_SCRIPTS
+import random
 
-
-class Character(ObjectParent, DefaultCharacter):
+class Hostile(ObjectParent, DefaultCharacter):
     """
-    Base character typeclass for the game.
+    Base hostile monster class.
     
     Attributes:
         # Core Stats
@@ -31,11 +28,11 @@ class Character(ObjectParent, DefaultCharacter):
         charisma (int): Personality and leadership
         
         # Combat Stats
-        attack (int): Character's base attack value
-        defense (int): Character's base defense value
+        attack (int): Monster's base attack value
+        defense (int): Monster's base defense value
         max_health (int): Maximum health points
         current_health (int): Current health points
-        experience (int): Experience points earned
+        experience (int): Experience value when defeated
         left_hand (Object): Item held in left hand
         right_hand (Object): Item held in right hand
         wounds (dict): Current wounds on different body parts
@@ -63,7 +60,7 @@ class Character(ObjectParent, DefaultCharacter):
     defense = AttributeProperty(default=1, autocreate=True)
     max_health = AttributeProperty(default=10, autocreate=True)  # Keeping this higher for playability
     current_health = AttributeProperty(default=10, autocreate=True)  # Matching max_health
-    experience = AttributeProperty(default=0, autocreate=True)
+    experience = AttributeProperty(default=1, autocreate=True)  # Default XP value when defeated
     
     # Equipment slots (None means empty)
     left_hand = AttributeProperty(default=None, autocreate=True)
@@ -96,13 +93,12 @@ class Character(ObjectParent, DefaultCharacter):
         """
         super().at_object_creation()
         
-
     def get_stats(self):
         """
-        Get the character's current stats.
+        Get the monster's current stats.
         
         Returns:
-            dict: All character stats including core and combat stats
+            dict: All monster stats including core and combat stats
         """
         return {
             # Core stats
@@ -123,6 +119,34 @@ class Character(ObjectParent, DefaultCharacter):
             "max_health": self.max_health,
             "experience": self.experience
         }
+        
+    def heal(self, amount):
+        """
+        Heal the monster by the given amount, not exceeding max_health.
+        
+        Args:
+            amount (int): Amount of health to restore
+            
+        Returns:
+            int: Amount of health actually restored
+        """
+        old_health = self.current_health
+        self.current_health = min(self.current_health + amount, self.max_health)
+        return self.current_health - old_health
+        
+    def take_damage(self, amount):
+        """
+        Deal damage to the monster.
+        
+        Args:
+            amount (int): Amount of damage to deal
+            
+        Returns:
+            int: Amount of damage actually dealt
+        """
+        old_health = self.current_health
+        self.current_health = max(0, self.current_health - amount)
+        return old_health - self.current_health
 
     def add_wound(self, location, wound_desc):
         """
@@ -178,3 +202,20 @@ class Character(ObjectParent, DefaultCharacter):
             return self.scars.get(location, [])
         return self.scars
 
+    def npc_attack(self, target):
+        """
+        Initiate an attack against a target, respecting roundtime.
+        
+        Args:
+            target (Object): The target to attack
+            
+        Returns:
+            bool: Whether the attack was attempted
+        """
+        combat = GLOBAL_SCRIPTS.combat_handler
+        in_roundtime, _ = combat.is_in_roundtime(self)
+        if in_roundtime:
+            return False
+            
+        hit, damage, roundtime = combat.process_attack(self, target)
+        return True

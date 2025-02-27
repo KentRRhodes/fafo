@@ -1,11 +1,16 @@
 # Room Building and Navigation Commands Documentation
 
 ## Overview
-This document describes two main command systems:
+This document describes three main command systems:
 1. Room building commands for world creation
 2. Navigation commands for moving between rooms
+3. Combat commands for initiating combat
 
 ## Command Sets
+
+### CombatCmdSet
+Combat commands available to all players:
+- `kill` (`attack`, `hit`) - Initiate combat with a target
 
 ### BuilderCmdSet
 Builder-only commands for world creation, requiring the "build" or "Builder" permission:
@@ -330,6 +335,62 @@ The /list switch now displays regions in a numbered table:
 ```
 
 Numbers can be used instead of IDs for easier region selection.
+
+## Combat System
+
+### CmdKill
+Initiates combat with another character or NPC.
+
+**Usage:**
+```
+kill <target>
+attack <target>
+hit <target>
+```
+
+**Features:**
+- Basic attack vs defense + d100 roll system
+- Automatic hit/miss calculation
+- Damage application on successful hits
+- Roundtime tracking between attacks
+- Death handling and XP awards
+- Combat message broadcasting
+
+## Exit Types
+
+The game supports two types of exits that can be chosen during room creation:
+
+### StaticExit (Default)
+- Always visible
+- Standard permanent connections
+- Used for structural features like doors between buildings
+
+### DegradingExit
+- Hidden by default
+- Becomes visible when discovered or used
+- Tracks number of traversals
+- Description changes based on use frequency
+- Automatically hides again when usage degrades to zero
+- Name reflects wear level (e.g., "a faint trail", "a well-worn path")
+
+### Exit Creation
+All build commands now prompt for exit type:
+```
+Do you want to use degrading exits that become hidden over time? (yes/no):
+```
+- Yes: Creates DegradingExit type exits
+- No: Creates StaticExit type exits (default)
+
+### Degrading Exit Wear Levels
+Exit names change based on traverse count:
+```
+0-9:   "a faint trail to the {direction}"
+10-24: "a narrow path heading {direction}"
+25-49: "an overgrown path to the {direction}"
+50-99: "a well-trodden path to the {direction}"
+100+:  "a wide road extending {direction}"
+```
+Each level has multiple possible descriptions that are randomly selected.
 
 ## Navigation System
 

@@ -7,6 +7,7 @@ from evennia.commands.default.building import ObjManipCommand
 from evennia import settings, GLOBAL_SCRIPTS
 from evennia.utils import evtable
 import random
+from typeclasses.exits import DegradingExit, StaticExit
 
 def get_next_block_number():
     """Get and increment the next available block number"""
@@ -16,15 +17,17 @@ def get_coord_map():
     """Get the coordinate map script"""
     return GLOBAL_SCRIPTS.coord_map_manager
 
-def create_exit_if_none(exit_key, aliases, source, destination):
+def create_exit_if_none(exit_key, aliases, source, destination, exit_typeclass=StaticExit):
     """
     Create an exit only if one doesn't already exist with the same key or alias.
+    Default exit type is now StaticExit.
     
     Args:
         exit_key (str): The main key for the exit
         aliases (list): List of aliases for the exit
         source (Object): The location where the exit will be created
         destination (Object): Where the exit leads to
+        exit_typeclass (class): The exit typeclass to use (defaults to DegradingExit)
         
     Returns:
         bool: True if exit was created, False if it already existed
@@ -46,7 +49,7 @@ def create_exit_if_none(exit_key, aliases, source, destination):
         return False
         
     # No matching exit found, create new one
-    create_object(DefaultExit, key=exit_key,
+    create_object(exit_typeclass, key=exit_key,
                  aliases=aliases,
                  location=source,
                  destination=destination)
@@ -210,6 +213,13 @@ class CmdBuildRoom(ObjManipCommand):
         if not region_id:
             caller.msg("Invalid region selection. Please select a valid number or region ID.")
             return
+
+        # Ask about degrading exits
+        use_degrading = yield("Do you want to use degrading exits that become hidden over time? (yes/no):")
+        use_degrading = use_degrading.lower().strip() in ('yes', 'y', 'true')
+        
+        # Set exit type based on response
+        exit_typeclass = DegradingExit if use_degrading else StaticExit
             
         # Continue with original room creation logic using self.args
         args = self.args.strip().split()
@@ -261,14 +271,14 @@ class CmdBuildRoom(ObjManipCommand):
                         if direction != self.dir_map.get(direction):  # if short form
                             aliases.append(self.dir_map.get(direction))
                             
-                        if create_exit_if_none(direction, aliases, caller.location, room):
+                        if create_exit_if_none(direction, aliases, caller.location, room, exit_typeclass=exit_typeclass):
                             back_dir = self.opposites[self.dir_map.get(direction)]
                             back_aliases = []
                             back_short = {v: k for k, v in self.dir_map.items()}.get(back_dir)
                             if back_short:
                                 back_aliases.append(back_short)
                             
-                            create_exit_if_none(back_dir, back_aliases, room, caller.location)
+                            create_exit_if_none(back_dir, back_aliases, room, caller.location, exit_typeclass=exit_typeclass)
                 
                 caller.msg(f"Created room {room.key} at coordinates ({x}, {y}, {z})")
                 
@@ -374,9 +384,7 @@ class CmdBuildGrid(ObjManipCommand):
 
     Usage:
       buildgrid <region> <direction> <number> <direction2> <number2> [connect]
-
-    Creates a grid of rooms extending in two directions. Region must be specified
-    first either as a number from the list or a region ID.
+      buildgrid/static same as above - creates non-degrading permanent exits
     """
 
     key = "buildgrid"
@@ -403,16 +411,21 @@ class CmdBuildGrid(ObjManipCommand):
             return
             
         # Get region selection from user
-        caller.msg("Enter region selection (number or ID):")
-        region_id = yield("text")
+        region_id = yield("Enter region selection (number or ID):")
         
         # Convert selection to region ID
         region_id = select_region(caller, region_id, regions)
         if not region_id:
             caller.msg("Invalid region selection. Please select a valid number or region ID.")
             return
-            
-        # Continue with original grid creation logic using args
+
+        # Ask about degrading exits
+        use_degrading = yield("Do you want to use degrading exits that become hidden over time? (yes/no):")
+        use_degrading = use_degrading.lower().strip() in ('yes', 'y', 'true')
+        
+        # Set exit type based on response
+        exit_typeclass = DegradingExit if use_degrading else StaticExit
+
         dir1, num1, dir2, num2 = args[:4]
         force_connections = "connect" in args[4:] if len(args) > 4 else False
 
@@ -499,14 +512,14 @@ class CmdBuildGrid(ObjManipCommand):
                             if dir_short:
                                 dir_aliases.append(dir_short)
                                 
-                            if create_exit_if_none(direction, dir_aliases, existing_room, room):
+                            if create_exit_if_none(direction, dir_aliases, existing_room, room, exit_typeclass=exit_typeclass):
                                 # Create return exit
                                 back_aliases = []
                                 back_short = alias_map.get(opposite)
                                 if back_short:
                                     back_aliases.append(back_short)
                                     
-                                create_exit_if_none(opposite, back_aliases, room, existing_room)
+                                create_exit_if_none(opposite, back_aliases, room, existing_room, exit_typeclass=exit_typeclass)
 
         for i in range(num1):
             # Calculate next coordinates in first direction
@@ -536,7 +549,7 @@ class CmdBuildGrid(ObjManipCommand):
             elif dir1 in alias_map:  # if we used long form, add short form
                 dir1_aliases.append(alias_map[dir1])
                 
-            if create_exit_if_none(dir1, dir1_aliases, prev_room, new_room):
+            if create_exit_if_none(dir1, dir1_aliases, prev_room, new_room, exit_typeclass=exit_typeclass):
                 # Only create return exit if forward exit was created
                 back_dir = opposites[dir1_full]
                 back_aliases = []
@@ -544,7 +557,7 @@ class CmdBuildGrid(ObjManipCommand):
                 if back_short:
                     back_aliases.append(back_short)
                     
-                create_exit_if_none(back_dir, back_aliases, new_room, prev_room)
+                create_exit_if_none(back_dir, back_aliases, new_room, prev_room, exit_typeclass=exit_typeclass)
 
             first_row.append(new_room)
             prev_room = new_room
@@ -583,7 +596,7 @@ class CmdBuildGrid(ObjManipCommand):
                 elif dir2 in alias_map:  # if we used long form, add short form
                     dir2_aliases.append(alias_map[dir2])
                     
-                if create_exit_if_none(dir2, dir2_aliases, base_room, new_room):
+                if create_exit_if_none(dir2, dir2_aliases, base_room, new_room, exit_typeclass=exit_typeclass):
                     # Only create return exit if forward exit was created
                     back_dir = opposites[dir2_full]
                     back_aliases = []
@@ -591,7 +604,7 @@ class CmdBuildGrid(ObjManipCommand):
                     if back_short:
                         back_aliases.append(back_short)
                         
-                    create_exit_if_none(back_dir, back_aliases, new_room, base_room)
+                    create_exit_if_none(back_dir, back_aliases, new_room, base_room, exit_typeclass=exit_typeclass)
                 
                 # Link to previous room in row if it exists
                 if new_row:
@@ -602,7 +615,7 @@ class CmdBuildGrid(ObjManipCommand):
                     elif dir1 in alias_map:  # if we used long form, add short form
                         dir1_aliases.append(alias_map[dir1])
                     
-                    if create_exit_if_none(dir1, dir1_aliases, new_row[-1], new_room):
+                    if create_exit_if_none(dir1, dir1_aliases, new_row[-1], new_room, exit_typeclass=exit_typeclass):
                         # Only create return exit if forward exit was created
                         back_dir = opposites[dir1_full]
                         back_aliases = []
@@ -610,7 +623,7 @@ class CmdBuildGrid(ObjManipCommand):
                         if back_short:
                             back_aliases.append(back_short)
                         
-                        create_exit_if_none(back_dir, back_aliases, new_room, new_row[-1])
+                        create_exit_if_none(back_dir, back_aliases, new_room, new_row[-1], exit_typeclass=exit_typeclass)
                 
                 new_row.append(new_room)
             
@@ -763,6 +776,13 @@ class CmdBuildMaze(ObjManipCommand):
         if not region_id:
             caller.msg("Invalid region selection. Please select a valid number or region ID.")
             return
+
+        # Ask about degrading exits
+        use_degrading = yield("Do you want to use degrading exits that become hidden over time? (yes/no):")
+        use_degrading = use_degrading.lower().strip() in ('yes', 'y', 'true')
+        
+        # Set exit type based on response
+        exit_typeclass = DegradingExit if use_degrading else StaticExit
             
         # Continue with original maze creation logic using args
         direction, number = args[:2]
@@ -825,7 +845,7 @@ class CmdBuildMaze(ObjManipCommand):
         elif direction in alias_map:  # if we used long form, add short form
             aliases.append(alias_map[direction])
             
-        if create_exit_if_none(direction, aliases, caller.location, new_room):
+        if create_exit_if_none(direction, aliases, caller.location, new_room, exit_typeclass=exit_typeclass):
             # Only create return exit if forward exit was created
             back_dir = self.opposites[full_direction]
             back_aliases = []
@@ -833,7 +853,7 @@ class CmdBuildMaze(ObjManipCommand):
             if back_short:
                 back_aliases.append(back_short)
                 
-            create_exit_if_none(back_dir, back_aliases, new_room, caller.location)
+            create_exit_if_none(back_dir, back_aliases, new_room, caller.location, exit_typeclass=exit_typeclass)
         
         if force_connections:
             self.connect_to_adjacent_rooms(new_room, exclude_rooms=[caller.location])
@@ -868,7 +888,7 @@ class CmdBuildMaze(ObjManipCommand):
                     if rand_short:
                         rand_aliases.append(rand_short)
                         
-                    if create_exit_if_none(rand_dir, rand_aliases, source, new_room):
+                    if create_exit_if_none(rand_dir, rand_aliases, source, new_room, exit_typeclass=exit_typeclass):
                         # Only create return exit if forward exit was created
                         back_dir = self.opposites[rand_dir]
                         back_aliases = []
@@ -876,7 +896,7 @@ class CmdBuildMaze(ObjManipCommand):
                         if back_short:
                             back_aliases.append(back_short)
                             
-                        create_exit_if_none(back_dir, back_aliases, new_room, source)
+                        create_exit_if_none(back_dir, back_aliases, new_room, source, exit_typeclass=exit_typeclass)
                     
                     placed = True
                     break
@@ -908,14 +928,14 @@ class CmdBuildMaze(ObjManipCommand):
                                     if rand_short:
                                         rand_aliases.append(rand_short)
                                         
-                                    if create_exit_if_none(direction, rand_aliases, other_room, new_room):
+                                    if create_exit_if_none(direction, rand_aliases, other_room, new_room, exit_typeclass=exit_typeclass):
                                         # Create return exit
                                         back_aliases = []
                                         back_short = alias_map.get(opposite)
                                         if back_short:
                                             back_aliases.append(back_short)
                                             
-                                        create_exit_if_none(opposite, back_aliases, new_room, other_room)
+                                        create_exit_if_none(opposite, back_aliases, new_room, other_room, exit_typeclass=exit_typeclass)
                                     break
                             break
 
