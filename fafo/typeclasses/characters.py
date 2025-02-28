@@ -215,22 +215,36 @@ class Character(ObjectParent, DefaultCharacter):
         """
         super().at_object_creation()
         self.db.roundtime = None
+        self.db.vulnerability = None
 
-    def cleanup_roundtime(self):
-        """Clean up any roundtime scripts attached to this character."""
+    def cleanup_vulnerability(self):
+        """Clean up any vulnerability timers and restore normal defense calculation."""
+        vulnerability_scripts = self.scripts.get("vulnerability_script")
+        if vulnerability_scripts:
+            for script in vulnerability_scripts:
+                self.msg("You manage to recover your guard.")
+                script.stop()
+        self.db.vulnerability = None
+        
+    def cleanup_timers(self):
+        """Clean up any timer scripts attached to this character."""
+        # Clean up roundtime
         roundtime_scripts = self.scripts.get("roundtime_script")
         if roundtime_scripts:
             for script in roundtime_scripts:
                 script.stop()
         self.db.roundtime = None
         
+        # Clean up vulnerability with proper messaging
+        self.cleanup_vulnerability()
+        
     def at_server_reload(self):
         """Called when server reloads."""
-        self.cleanup_roundtime()
+        self.cleanup_timers()
         
     def at_server_shutdown(self):
         """Called at server shutdown."""
-        self.cleanup_roundtime()
+        self.cleanup_timers()
 
     def get_stats(self):
         """
@@ -333,4 +347,11 @@ class Character(ObjectParent, DefaultCharacter):
         self.db.experience = self.db.experience + amount
         self.msg(f"You gain {amount} experience points!")
         return self.db.experience
+
+    def get_weapon_finesse(self):
+        """
+        Get character's weapon finesse talent value.
+        Placeholder until talent system is implemented.
+        """
+        return 0  # Default to 0 until talent system exists
 

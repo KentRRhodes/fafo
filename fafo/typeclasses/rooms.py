@@ -55,3 +55,57 @@ class Room(ObjectParent, DefaultRoom):
         
         # If no region or error getting region data, return base name
         return base_name
+
+    def return_appearance(self, looker, **kwargs):
+        """
+        This formats a description. It is the hook a 'look' command
+        should call.
+        Args:
+            looker (Object): Object doing the looking.
+            **kwargs: Arbitrary, optional arguments for users
+                overriding the call (unused by default).
+        """
+        if not looker:
+            return ""
+
+        # get and identify all objects
+        visible = (con for con in self.contents if con != looker and con.access(looker, "view"))
+        exits, users, things, hostiles = [], [], [], []
+        
+        for con in visible:
+            key = con.get_display_name(looker)
+            if con.destination:
+                exits.append(key)
+            elif con.has_account:
+                users.append(key)
+            elif hasattr(con, 'is_alive'): # Check if it's a hostile
+                hostiles.append(key)
+            else:
+                things.append(key)
+
+        # get description, build string
+        string = f"|c{self.get_display_name(looker)}|n\n"
+        desc = self.db.desc
+        
+        if desc:
+            string += f"{desc}"
+            
+        # Show hostiles (in yellow) and other objects first
+        if hostiles or things:
+            string += "\n|wYou see:|n"
+            if hostiles:
+                string += f" |y{', '.join(hostiles)}|n"
+            if things:
+                if hostiles:  # Add comma if we had hostiles
+                    string += ","
+                string += f" {', '.join(things)}"
+            
+        # Show exits all on one line
+        if exits:
+            string += f"\n|wObvious Exits:|n {', '.join(exits)}"
+            
+        # Show other players last
+        if users:
+            string += f"\n|wAlso here:|n {', '.join(users)}"
+
+        return string

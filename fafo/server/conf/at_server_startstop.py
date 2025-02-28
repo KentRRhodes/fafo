@@ -40,9 +40,10 @@ def at_server_start():
                      
     # Clean up any lingering roundtime scripts from previous shutdown
     from evennia.scripts.models import ScriptDB
-    roundtime_scripts = ScriptDB.objects.filter(db_typeclass_path__contains="RoundtimeScript")
-    for script in roundtime_scripts:
-        script.delete()
+    for script_type in ["RoundtimeScript", "VulnerabilityScript"]:
+        scripts = ScriptDB.objects.filter(db_typeclass_path__contains=script_type)
+        for script in scripts:
+            script.delete()
 
 
 def at_server_stop():

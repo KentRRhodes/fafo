@@ -16,7 +16,7 @@ class Item(ObjectParent, DefaultObject):
 
 class Weapon(Item):
     """Weapon items that can be used in combat."""
-    pass
+    weapon_speed = AttributeProperty(default=5, autocreate=True)  # Default 5 second base vulnerability on miss
 
 class Shield(Item):
     """Shield items for defense."""
@@ -34,6 +34,10 @@ class Clothing(Item):
     """Wearable items."""
     pass
 
+class MagicItem(Item):
+    """Magic items."""
+    pass
+
 class Widget(Item):
-    """Miscellaneous items with special functions."""
+    """Miscellaneous items. Anything not covered by other types."""
     pass

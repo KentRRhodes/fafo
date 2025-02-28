@@ -29,7 +29,7 @@ class RoundtimeScript(DefaultScript):
         """Called every self.interval seconds."""
         if time.time() >= self.db.start_time + self.db.duration:
             # Notify the character roundtime is done
-            self.obj.msg("You have recovered.")
+            self.obj.msg("Roundtime expired.")
             # Stop and delete the script
             self.stop()
             self.delete()
@@ -62,7 +62,92 @@ class RoundtimeScript(DefaultScript):
                     self.obj.roundtime = None
             # Notify the character if online
             if hasattr(self.obj, 'msg'):
-                self.obj.msg("Your roundtime has expired.")
+                self.obj.msg("Roundtime expired.")
+        self.delete()
+        
+    def at_server_reload(self):
+        """Called if server reloads."""
+        self.stop()
+        
+    def at_server_shutdown(self):
+        """Called at server shutdown."""
+        self.stop()
+
+class VulnerabilityScript(DefaultScript):
+    """
+    A script that manages a character's vulnerability timer and effects.
+    """
+    def at_script_creation(self):
+        """Set up the script."""
+        self.key = "vulnerability_script"
+        self.desc = "Handles character vulnerability period"
+        self.interval = 1  # Check every second
+        self.persistent = False
+        
+        # Initialize with defaults
+        self.db.start_time = time.time()
+        self.db.duration = 5  # Default 5 seconds
+        self.db.vuln_type = None  # Type of vulnerability
+        self.db.def_reduction = 0  # Percentage reduction to defense
+        
+    def at_repeat(self):
+        """Called every self.interval seconds."""
+        if time.time() >= self.db.start_time + self.db.duration:
+            # Notify the character vulnerability is done
+            self.obj.msg("You manage to recover your guard.")
+            # Stop and delete the script
+            self.stop()
+            self.delete()
+            return
+            
+    def set_vulnerability(self, vuln_type, def_reduction):
+        """
+        Set the vulnerability type and its effects.
+        
+        Args:
+            vuln_type (str): Type of vulnerability (e.g. "miss")
+            def_reduction (float): Percentage reduction to defense
+        """
+        self.db.vuln_type = vuln_type
+        self.db.def_reduction = def_reduction
+        
+    def get_defense_modifier(self):
+        """
+        Get the current defense modification.
+        
+        Returns:
+            float: Multiplier for defense (e.g. 0.5 for 50% reduction)
+        """
+        return max(0, 1 - (self.db.def_reduction / 100))
+        
+    def extend_time(self, seconds):
+        """
+        Extend the vulnerability by the given number of seconds.
+        
+        Args:
+            seconds (float): Number of seconds to add
+        """
+        self.db.duration += seconds
+        
+    def time_remaining(self):
+        """
+        Get the remaining vulnerability time in seconds.
+        
+        Returns:
+            float: Seconds remaining in vulnerability
+        """
+        return max(0, (self.db.start_time + self.db.duration) - time.time())
+        
+    def at_script_stop(self):
+        """Called when script is stopped for any reason."""
+        # Clean up vulnerability references
+        if self.obj:
+            if hasattr(self.obj, 'db'):
+                if hasattr(self.obj, 'vulnerability'):
+                    self.obj.vulnerability = None
+            # Notify the character if online
+            if hasattr(self.obj, 'msg'):
+                self.obj.msg("You manage to recover your guard.")
         self.delete()
         
     def at_server_reload(self):
@@ -130,29 +215,83 @@ class CombatHandler(DefaultScript):
         new_script.db.start_time = time.time()
         return new_script
 
-    def calculate_hit(self, attacker, defender):
+    def set_vulnerability(self, character, duration):
         """
-        Calculate if an attack hits with two-stage system:
-        1. ATT = agility + speed + weapon_skill + buffs - debuffs + d100
-        2. If initial roll fails, check if power difference can overcome
+        Set or extend a character's vulnerability timer.
         
         Args:
-            attacker (Object): The attacking character/monster
-            defender (Object): The defending character/monster
+            character (Object): The character to set vulnerability for
+            duration (float): Number of seconds for vulnerability
             
         Returns:
-            tuple: (bool hit, dict roll_info)
+            VulnerabilityScript: The vulnerability script
+        """
+        script = character.scripts.get("vulnerability_script")
+        
+        if script:
+            # Replace existing vulnerability
+            script[0].stop()
+            
+        # Create new vulnerability script
+        new_script = create_script(
+            "scripts.combat_handler.VulnerabilityScript",
+            obj=character,
+            persistent=False,
+            autostart=True
+        )
+        new_script.db.duration = duration
+        new_script.db.start_time = time.time()
+        return new_script
+        
+    def calculate_vulnerability_time(self, attacker):
+        """Calculate vulnerability time based on weapon speed and finesse."""
+        # Get weapon speed from equipped weapon, default to 5 if no weapon
+        weapon_speed = 5  # Default vulnerability time
+        if hasattr(attacker, 'right_hand') and attacker.right_hand:
+            if hasattr(attacker.right_hand, 'weapon_speed'):
+                weapon_speed = attacker.right_hand.weapon_speed
+                
+        # Get attacker's weapon finesse
+        finesse = attacker.get_weapon_finesse()
+        
+        # Calculate base time (50% of weapon speed)
+        base_time = weapon_speed * 0.5
+        
+        # Reduce by weapon finesse (10% per point)
+        reduction = finesse * 0.1 * base_time
+        
+        # Return final time with minimum of 1 second
+        return max(1.0, base_time - reduction)
+        
+    def calculate_vulnerability_defense_reduction(self, attacker):
+        """Calculate defense reduction percentage based on weapon finesse."""
+        finesse = attacker.get_weapon_finesse()
+        # Base 50% reduction, decreased by 10% per point of finesse
+        reduction = 50 - (finesse * 10)
+        # Ensure reduction stays between 0% and 50%
+        return max(0, min(50, reduction))
+
+    def calculate_hit(self, attacker, defender):
+        """
+        Calculate if an attack hits with two-stage system.
+        Takes into account vulnerability defense reductions.
         """
         # Calculate attacker's base attack value (before d100)
         attack_base = int(attacker.agility + 
                          attacker.speed + 
-                         attacker.weapons)  # buffs/debuffs handled by stat system
+                         attacker.weapons)
         
         # Calculate defender's base defense value
         shield_bonus = int(defender.shields if hasattr(defender, 'left_hand') and defender.left_hand else 0)
         defense_base = int(defender.agility + 
                           defender.speed + 
-                          shield_bonus)  # buffs/debuffs handled by stat system
+                          shield_bonus)
+        
+        # Check for vulnerability effects on defender
+        vulnerability = defender.scripts.get("vulnerability_script")
+        if vulnerability:
+            # Apply defense reduction before d100
+            defense_base = int(defense_base * vulnerability[0].get_defense_modifier())
         
         # Roll d100s
         attacker_roll = random.randint(1, 100)
@@ -178,7 +317,7 @@ class CombatHandler(DefaultScript):
             'defense_total': defense_total,
             'end_roll': end_roll,
             'power_diff': power_diff,
-            'power_hit': False  # Track if hit was due to power difference
+            'power_hit': False
         }
         
         # First check - standard hit
@@ -214,6 +353,24 @@ class CombatHandler(DefaultScript):
             # Use the actual endroll for damage
             return max(1, end_roll)
         
+    def get_vulnerability_chance(self, attacker):
+        """
+        Calculate chance of vulnerability on miss based on weapon finesse rank.
+        
+        Args:
+            attacker (Object): The attacking character/monster
+            
+        Returns:
+            float: Chance of vulnerability (0.0 to 1.0)
+        """
+        finesse = attacker.get_weapon_finesse()
+        if finesse <= 1:
+            return 0.5  # 50% base chance
+        elif finesse <= 3:
+            return 0.4  # 40% chance at rank 2-3
+        else:  # 4-5
+            return 0.3  # 30% chance at rank 4-5
+            
     def process_attack(self, attacker, defender):
         """
         Process a complete attack sequence.
@@ -242,14 +399,14 @@ class CombatHandler(DefaultScript):
         if roll_info['power_hit']:
             combat_msg = (
                 f"{attacker.key} powers through {defender.key}'s formidable defenses.\n"
-                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) "
-                f"vs DEF {roll_info['defense_total']} = {roll_info['end_roll']}\n"
+                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) [{roll_info['attack_total']}] "
+                f"vs DEF [{roll_info['defense_total']}] = {roll_info['end_roll']}\n"
             )
         else:
             combat_msg = (
                 f"{attacker.key} attacks {defender.key}\n"
-                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) "
-                f"vs DEF {roll_info['defense_total']} = {roll_info['end_roll']}\n"
+                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) [{roll_info['attack_total']}] "
+                f"vs DEF [{roll_info['defense_total']}] = {roll_info['end_roll']}\n"
             )
         
         if hits:
@@ -277,8 +434,30 @@ class CombatHandler(DefaultScript):
             return True, damage, roundtime
             
         else:
-            # Complete the message for a miss
-            combat_msg += "a miss."
+            # Only apply vulnerability if both checks failed (not a power hit)
+            if not roll_info['power_hit']:
+                # Roll for vulnerability chance
+                vuln_chance = self.get_vulnerability_chance(attacker)
+                if random.random() < vuln_chance:
+                    vuln_time = self.calculate_vulnerability_time(attacker)
+                    def_reduction = self.calculate_vulnerability_defense_reduction(attacker)
+                    
+                    # Create vulnerability script
+                    vuln_script = self.set_vulnerability(attacker, vuln_time)
+                    vuln_script.set_vulnerability("miss", def_reduction)
+                    
+                    # Complete the message for a vulnerable miss
+                    combat_msg += "Your failed attack leaves you feeling exposed."
+                    
+                    if hasattr(attacker, 'msg'):
+                        attacker.msg(f"Defense reduced by {def_reduction}% for {vuln_time:.1f} seconds!")
+                elif hasattr(attacker, 'msg'):
+                    # Complete the message for a non-vulnerable miss
+                    combat_msg += "a miss."
+                    attacker.msg("Your weapon finesse helps you maintain your defenses despite the miss!")
+            else:
+                # Complete the message for a power-check miss
+                combat_msg += "a miss."
             
             # Announce to all
             if attacker.location:
@@ -331,10 +510,12 @@ class CombatHandler(DefaultScript):
         pass
 
     def get_combat_details(self, attacker, defender, attacker_roll, defender_roll, endroll, power_diff):
-        """
-        Generate a detailed breakdown of combat calculations.
-        """
+        """Generate a detailed breakdown of combat calculations."""
         shield_bonus = defender.shields if hasattr(defender, 'left_hand') and defender.left_hand else 0
+        
+        # Calculate totals for display
+        attack_total = attacker.attack + attacker.weapons + attacker_roll
+        defense_total = defender.defense + shield_bonus + defender_roll
         
         attacker_msg = (
             f"\nAttack Roll Breakdown:"
@@ -345,7 +526,7 @@ class CombatHandler(DefaultScript):
             f"\n Defense: {defender.defense}"
             f"\n Shield Bonus: +{shield_bonus}"
             f"\n Their Roll: +{defender_roll}"
-            f"\n = Final Roll: {endroll}"
+            f"\n = ATT [{attack_total}] vs DEF [{defense_total}] = {endroll}"
         )
         
         defender_msg = (
@@ -357,7 +538,7 @@ class CombatHandler(DefaultScript):
             f"\n Your Defense: {defender.defense}"
             f"\n Shield Bonus: +{shield_bonus}"
             f"\n Your Roll: +{defender_roll}"
-            f"\n = Final Roll: {endroll}"
+            f"\n = ATT [{attack_total}] vs DEF [{defense_total}] = {endroll}"
         )
         
         room_msg = f" (Roll: {endroll})"
