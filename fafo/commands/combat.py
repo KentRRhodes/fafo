@@ -64,3 +64,80 @@ class CmdKill(Command):
         
         # Set roundtime
         self.caller.db.roundtime = roundtime_script
+
+class CmdAim(Command):
+    """
+    Target a specific body part for your next attack.
+    
+    Usage:
+      aim <body part>
+      aim clear
+      aim
+      
+    Examples:
+      aim head     - Target the head
+      aim clear    - Clear current aim
+      aim         - Show current aim
+    """
+    key = "aim"
+    locks = "cmd:all()"
+    help_category = "Combat"
+    
+    def normalize_body_part(self, target):
+        """
+        Normalize body part input to match valid format.
+        Handles various input formats like 'right arm', 'r arm', 'rarm', etc.
+        """
+        target = target.lower().strip()
+        
+        # Handle 'clear' command
+        if target == "clear":
+            return "clear"
+            
+        # Simple body parts that don't need processing
+        if target in ["head", "neck", "chest", "back", "abdomen"]:
+            return target
+            
+        # Process sides (right/left)
+        if target.startswith(('right', 'left', 'r', 'l')):
+            # Split into words
+            parts = target.split()
+            if len(parts) == 1:  # Combined word like 'rarm' or 'lleg'
+                if target.startswith('r'):
+                    side = 'right'
+                    part = target[1:]
+                else:
+                    side = 'left'
+                    part = target[1:]
+            else:  # Separate words like 'r arm' or 'left leg'
+                side = 'right' if parts[0] in ['r', 'right'] else 'left'
+                part = parts[1] if len(parts) > 1 else ''
+                
+            # Validate part
+            if part in ['arm', 'hand', 'leg', 'eye']:
+                return f"{side}_{part}"
+                
+        return target  # Return original if no matches
+        
+    def func(self):
+        """Handle the aim command."""
+        if not self.args:
+            if self.caller.aim:
+                self.caller.msg(f"You are currently aiming at: {self.caller.aim.replace('_', ' ')}")
+            else:
+                self.caller.msg("You are not currently aiming at any body part.")
+            return
+            
+        # Normalize the input
+        target = self.normalize_body_part(self.args)
+        
+        if target == "clear":
+            self.caller.aim = None
+            self.caller.msg("You clear your targeted aim.")
+            return
+            
+        try:
+            self.caller.aim = target
+            self.caller.msg(f"You will target the {target.replace('_', ' ')} with your next attack.")
+        except ValueError as e:
+            self.caller.msg(str(e))

@@ -1,16 +1,22 @@
 # Room Building and Navigation Commands Documentation
 
 ## Overview
-This document describes three main command systems:
+This document describes four main command systems:
 1. Room building commands for world creation
 2. Navigation commands for moving between rooms
 3. Combat commands for initiating combat
+4. Item management commands for equipment
 
 ## Command Sets
 
 ### CombatCmdSet
 Combat commands available to all players:
-- `kill` (`attack`, `hit`) - Initiate combat with a target
+- `kill` (`attack`, `k`, `kil`) - Initiate combat with a target
+  - Can be used without a target to attack first available hostile
+  - Checks for valid target type and if target is alive
+  - Enforces roundtime between attacks
+  - Shows detailed combat messaging with attack and defense rolls
+  - Applies vulnerability on misses based on weapon finesse
 
 ### BuilderCmdSet
 Builder-only commands for world creation, requiring the "build" or "Builder" permission:
@@ -69,7 +75,22 @@ Persistent script that maintains room block numbering across server restarts.
 - `at_script_creation()`: Sets up initial script configuration and block counter
 - `get_next_block()`: Returns current block number and increments counter
 
-## Building Commands
+## Room Building
+All room building commands require the "build" or "Builder" permission.
+
+### Room Creation
+- Single rooms with `buildroom`
+- Room grids with `buildgrid`
+- Random mazes with `buildmaze`
+- Coordinate-based placement
+- Exit management
+- Region assignment
+
+### Room Management
+- Coordinate system initialization
+- Room block organization
+- Region assignment
+- Room deletion
 
 ### CmdInitCoords
 Initialize the coordinate system by setting the current room as the origin point.
@@ -356,41 +377,127 @@ hit <target>
 - Death handling and XP awards
 - Combat message broadcasting
 
-## Exit Types
+### Attack Resolution
+1. Initial Attack Roll:
+   - ATT = (agility + speed + weapon_skill) + d100
+   - DEF = (agility + speed + shield_bonus) + d100
+   - Success if ATT > DEF
 
-The game supports two types of exits that can be chosen during room creation:
+2. Power Check (on initial miss):
+   - If (ATT - DEF + power_difference) >= 1
+   - Shows "powers through X's formidable defenses"
+   - Damage based on power difference
 
-### StaticExit (Default)
-- Always visible
-- Standard permanent connections
-- Used for structural features like doors between buildings
+3. Damage Calculation:
+   - Based on the margin of success (endroll)
+   - Linear scaling with attack success
+   - Power hits use power difference for damage
 
-### DegradingExit
-- Hidden by default
-- Becomes visible when discovered or used
-- Tracks number of traversals
-- Description changes based on use frequency
-- Automatically hides again when usage degrades to zero
-- Name reflects wear level (e.g., "a faint trail", "a well-worn path")
+### Vulnerability System
+Applies on missed attacks with following rules:
+- Base 50% chance at weapon finesse rank 0-1
+- 40% chance at ranks 2-3
+- 30% chance at ranks 4-5
+- No vulnerability on successful power checks
+- Duration: 50% of weapon_speed, reduced by (weapon_finesse * 10%)
+- Defense Reduction: 50% base, reduced by (weapon_finesse * 10%)
+- Minimum 1 second duration
 
-### Exit Creation
-All build commands now prompt for exit type:
+### Combat Messages
+- Standard format: "ATT: X + Y(d100) [Total] vs DEF [Total] = Result"
+- Hit messages show damage dealt
+- Miss messages show vulnerability status
+- Power hits show special success message
+- Vulnerability expiry shows "You manage to recover your guard"
+- Roundtime expiry shows "Roundtime expired"
+
+### Body Part Targeting
+Players can aim at specific body parts:
+- Requires sufficient weapon skill (implementation pending)
+- Valid targets: head, neck, chest, back, abdomen, right_arm, left_arm, right_hand, left_hand, right_leg, left_leg, right_eye, left_eye
+- Aim persists until changed or cleared
+
+### CmdAim
+Target a specific body part for combat attacks.
+
+**Usage:**
 ```
-Do you want to use degrading exits that become hidden over time? (yes/no):
+aim <body part>
+aim clear
+aim
 ```
-- Yes: Creates DegradingExit type exits
-- No: Creates StaticExit type exits (default)
 
-### Degrading Exit Wear Levels
-Exit names change based on traverse count:
+**Examples:**
 ```
-0-9:   "a faint trail to the {direction}"
-10-24: "a narrow path heading {direction}"
-25-49: "an overgrown path to the {direction}"
-50-99: "a well-trodden path to the {direction}"
-100+:  "a wide road extending {direction}"
+aim head         - Target the head
+aim left arm     - Target the left arm (also: 'l arm', 'larm', 'leftarm')
+aim right leg    - Target the right leg (also: 'r leg', 'rleg', 'rightleg')
+aim r hand       - Target the right hand (also: 'righthand', 'rhand')
+aim l eye        - Target the left eye (also: 'lefteye', 'leye')
+aim clear        - Stop targeting specific body parts
+aim             - Show current targeted body part
 ```
-Each level has multiple possible descriptions that are randomly selected.
+
+**Valid Body Parts:**
+- head, neck
+- chest, back, abdomen
+- right/r arm, left/l arm
+- right/r hand, left/l hand
+- right/r leg, left/l leg
+- right/r eye, left/l eye
+
+**Features:**
+- Persists until cleared or changed
+- Case insensitive
+- Flexible input formats:
+  - Spaces are optional ('right arm' or 'rightarm')
+  - Can use 'r' or 'l' for right/left
+  - Full or abbreviated forms accepted
+- Shows error for invalid body parts
+- Shows current aim when used without arguments
+
+## Item System
+
+### Item Types
+1. Weapon
+   - Used in combat
+   - Has weapon_speed attribute affecting vulnerability duration
+   - Additional attributes pending
+
+2. Shield
+   - Provides defense bonus
+   - Must be equipped in left hand
+   - Additional attributes pending
+
+3. Armor
+   - Provides protection
+   - Body location specific
+   - Additional attributes pending
+
+4. Container
+   - Can hold other items
+   - Additional attributes pending
+
+5. Clothing
+   - Wearable items
+   - Additional attributes pending
+
+6. MagicItem
+   - Magical items
+   - Special magical effects
+   - Additional attributes pending
+
+7. Widget
+   - Miscellaneous items
+   - Special functions
+   - Additional attributes pending
+
+### Room Descriptions
+Rooms now show information in the following order:
+1. Room name and description
+2. "You see:" line with hostiles in yellow and other objects
+3. "Obvious Exits:" line listing available exits
+4. "Also here:" line listing other players
 
 ## Navigation System
 
@@ -528,3 +635,28 @@ When deleting blocks, the system:
 4. Removes coordinate tracking data
 5. Deletes exits first, then rooms
 6. Reports total counts of removed objects
+
+## Stat Effects System
+
+### Effect Command
+Test command for managing temporary stat modifications:
+```
+effect add <stat> <value> [duration=<seconds>] [%]
+effect remove <stat|all>
+effect list
+```
+
+Examples:
+- `effect add speed 2 duration=30` - Add +2 speed for 30 seconds
+- `effect add agility -1 duration=60` - Reduce agility by 1 for 1 minute
+- `effect add power 50% duration=10` - Add 50% power for 10 seconds
+- `effect list` - List all active effects
+- `effect remove speed` - Remove all speed effects
+- `effect remove all` - Remove all effects
+
+Features:
+- Can apply both flat and percentage modifiers
+- Temporary or permanent duration
+- Stack management
+- Detailed effect listing with remaining durations
+- Automatic cleanup on expiration

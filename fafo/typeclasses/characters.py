@@ -5,7 +5,6 @@ Characters are (by default) Objects setup to be puppeted by Accounts.
 They are what you "see" in game. The Character class in this module
 is setup to be the "default" character type created by the default
 creation commands.
-
 """
 from evennia.objects.objects import DefaultCharacter
 from evennia.typeclasses.attributes import AttributeProperty
@@ -13,6 +12,12 @@ from evennia import GLOBAL_SCRIPTS
 import random
 from .objects import ObjectParent
 
+# Valid body parts for targeting and wounds
+VALID_BODY_PARTS = [
+    "head", "neck", "chest", "back", "abdomen",
+    "right_arm", "left_arm", "right_hand", "left_hand",
+    "right_leg", "left_leg", "right_eye", "left_eye"
+]
 
 class Character(ObjectParent, DefaultCharacter):
     """
@@ -70,6 +75,24 @@ class Character(ObjectParent, DefaultCharacter):
     base_physical_fitness = AttributeProperty(default=1, autocreate=True)
     base_combat_prowess = AttributeProperty(default=1, autocreate=True)
     base_evasive_maneuvers = AttributeProperty(default=1, autocreate=True)
+    
+    # Combat attributes
+    _aim = AttributeProperty(default=None, autocreate=True)  # Currently aimed body part
+    
+    @property
+    def aim(self):
+        """Get current aim location."""
+        return self._aim
+        
+    @aim.setter
+    def aim(self, value):
+        """Set aim location with validation."""
+        if value is None or value in VALID_BODY_PARTS:
+            self._aim = value
+        else:
+            # Convert valid body parts to display format (spaces instead of underscores)
+            valid_parts = [part.replace('_', ' ') for part in VALID_BODY_PARTS]
+            raise ValueError(f"Invalid body part. Must be one of: {', '.join(valid_parts)}")
     
     # Combat stats
     base_defense = AttributeProperty(default=1, autocreate=True)
@@ -190,22 +213,12 @@ class Character(ObjectParent, DefaultCharacter):
 
     # Wound and scar tracking
     wounds = AttributeProperty(
-        default={
-            "head": [], "neck": [], "chest": [], "back": [],
-            "abdomen": [], "right_arm": [], "left_arm": [],
-            "right_hand": [], "left_hand": [], "right_leg": [],
-            "left_leg": [], "right_eye": [], "left_eye": []
-        },
+        default={part: [] for part in VALID_BODY_PARTS},
         autocreate=True
     )
     
     scars = AttributeProperty(
-        default={
-            "head": [], "neck": [], "chest": [], "back": [],
-            "abdomen": [], "right_arm": [], "left_arm": [],
-            "right_hand": [], "left_hand": [], "right_leg": [],
-            "left_leg": [], "right_eye": [], "left_eye": []
-        },
+        default={part: [] for part in VALID_BODY_PARTS},
         autocreate=True
     )
 
