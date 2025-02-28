@@ -9,7 +9,8 @@ creation commands.
 """
 from evennia.objects.objects import DefaultCharacter
 from evennia.typeclasses.attributes import AttributeProperty
-from evennia import GLOBAL_SCRIPTS, random
+from evennia import GLOBAL_SCRIPTS
+import random
 from .objects import ObjectParent
 
 
@@ -40,30 +41,148 @@ class Character(ObjectParent, DefaultCharacter):
         right_hand (Object): Item held in right hand
         wounds (dict): Current wounds on different body parts
         scars (dict): Permanent scars on different body parts
+        
+        # Skills
+        weapons (int): Proficiency with weapons
+        shields (int): Proficiency with shields
+        armor (int): Proficiency with armor
+        physical_fitness (int): Physical fitness level
+        combat_prowess (int): Combat prowess
+        evasive_maneuvers (int): Skill in evasive maneuvers
     """
     
     # Core Stats with default values
-    power = AttributeProperty(default=1, autocreate=True)
-    agility = AttributeProperty(default=1, autocreate=True)
-    speed = AttributeProperty(default=1, autocreate=True)
-    vitality = AttributeProperty(default=1, autocreate=True)
-    resistance = AttributeProperty(default=1, autocreate=True)
-    focus = AttributeProperty(default=1, autocreate=True)
-    discipline = AttributeProperty(default=1, autocreate=True)
-    intelligence = AttributeProperty(default=1, autocreate=True)
-    wisdom = AttributeProperty(default=1, autocreate=True)
-    charisma = AttributeProperty(default=1, autocreate=True)
+    base_power = AttributeProperty(default=1, autocreate=True)
+    base_agility = AttributeProperty(default=1, autocreate=True)
+    base_speed = AttributeProperty(default=1, autocreate=True)
+    base_vitality = AttributeProperty(default=1, autocreate=True)
+    base_resistance = AttributeProperty(default=1, autocreate=True)
+    base_focus = AttributeProperty(default=1, autocreate=True)
+    base_discipline = AttributeProperty(default=1, autocreate=True)
+    base_intelligence = AttributeProperty(default=1, autocreate=True)
+    base_wisdom = AttributeProperty(default=1, autocreate=True)
+    base_charisma = AttributeProperty(default=1, autocreate=True)
     
-    # Basic combat stats with default values
+    # Skills with default values
+    base_weapons = AttributeProperty(default=1, autocreate=True)
+    base_shields = AttributeProperty(default=1, autocreate=True)
+    base_armor = AttributeProperty(default=1, autocreate=True)
+    base_physical_fitness = AttributeProperty(default=1, autocreate=True)
+    base_combat_prowess = AttributeProperty(default=1, autocreate=True)
+    base_evasive_maneuvers = AttributeProperty(default=1, autocreate=True)
+    
+    # Combat stats
+    base_defense = AttributeProperty(default=1, autocreate=True)
+    max_health = AttributeProperty(default=10, autocreate=True)
+    current_health = AttributeProperty(default=10, autocreate=True)
+    experience = AttributeProperty(default=0, autocreate=True)
+
+    def get_modified_stat(self, stat):
+        """
+        Get a stat's value after all effects are applied.
+        
+        Args:
+            stat (str): The stat to get
+            
+        Returns:
+            float: The final calculated stat value
+        """
+        effect_handler = GLOBAL_SCRIPTS.stat_effect_handler
+        if effect_handler:
+            return effect_handler.calculate_stat(self, stat)
+        base_stat = getattr(self, f"base_{stat}")
+        return base_stat if base_stat is not None else 1
+
+    def get_modified_skill(self, skill):
+        """
+        Get a skill's value after all effects are applied.
+        
+        Args:
+            skill (str): The skill to get
+            
+        Returns:
+            float: The final calculated skill value
+        """
+        effect_handler = GLOBAL_SCRIPTS.stat_effect_handler
+        if effect_handler:
+            return effect_handler.calculate_stat(self, skill)  # Skills use same effect system
+        return getattr(self, skill)
+
     @property
     def attack(self):
-        """Calculate attack value from agility and speed."""
-        return self.agility + self.speed
+        """Calculate attack value from modified agility and speed."""
+        return self.agility + self.speed + self.weapons
         
-    defense = AttributeProperty(default=1, autocreate=True)
-    max_health = AttributeProperty(default=10, autocreate=True)  # Keeping this higher for playability
-    current_health = AttributeProperty(default=10, autocreate=True)  # Matching max_health
-    experience = AttributeProperty(default=0, autocreate=True)
+    @property
+    def power(self):
+        return self.get_modified_stat('power')
+        
+    @property
+    def agility(self):
+        return self.get_modified_stat('agility')
+        
+    @property
+    def speed(self):
+        return self.get_modified_stat('speed')
+        
+    @property
+    def vitality(self):
+        return self.get_modified_stat('vitality')
+        
+    @property
+    def resistance(self):
+        return self.get_modified_stat('resistance')
+        
+    @property
+    def focus(self):
+        return self.get_modified_stat('focus')
+        
+    @property
+    def discipline(self):
+        return self.get_modified_stat('discipline')
+        
+    @property
+    def intelligence(self):
+        return self.get_modified_stat('intelligence')
+        
+    @property
+    def wisdom(self):
+        return self.get_modified_stat('wisdom')
+        
+    @property
+    def charisma(self):
+        return self.get_modified_stat('charisma')
+        
+    @property
+    def weapons(self):
+        return self.get_modified_skill('weapons')
+        
+    @property
+    def shields(self):
+        return self.get_modified_skill('shields')
+        
+    @property
+    def armor(self):
+        return self.get_modified_skill('armor')
+        
+    @property
+    def physical_fitness(self):
+        return self.get_modified_skill('physical_fitness')
+        
+    @property
+    def combat_prowess(self):
+        return self.get_modified_skill('combat_prowess')
+        
+    @property
+    def evasive_maneuvers(self):
+        return self.get_modified_skill('evasive_maneuvers')
+        
+    @property
+    def defense(self):
+        """Calculate defense value from agility, speed, and shield if equipped."""
+        base_defense = self.agility + self.speed
+        shield_bonus = self.shields if self.left_hand else 0  # Get shield bonus if shield equipped
+        return base_defense + shield_bonus
     
     # Equipment slots (None means empty)
     left_hand = AttributeProperty(default=None, autocreate=True)
@@ -95,7 +214,23 @@ class Character(ObjectParent, DefaultCharacter):
         Called when object is first created.
         """
         super().at_object_creation()
+        self.db.roundtime = None
+
+    def cleanup_roundtime(self):
+        """Clean up any roundtime scripts attached to this character."""
+        roundtime_scripts = self.scripts.get("roundtime_script")
+        if roundtime_scripts:
+            for script in roundtime_scripts:
+                script.stop()
+        self.db.roundtime = None
         
+    def at_server_reload(self):
+        """Called when server reloads."""
+        self.cleanup_roundtime()
+        
+    def at_server_shutdown(self):
+        """Called at server shutdown."""
+        self.cleanup_roundtime()
 
     def get_stats(self):
         """
@@ -121,7 +256,14 @@ class Character(ObjectParent, DefaultCharacter):
             "defense": self.defense,
             "current_health": self.current_health,
             "max_health": self.max_health,
-            "experience": self.experience
+            "experience": self.experience,
+            # Skills
+            "weapons": self.weapons,
+            "shields": self.shields,
+            "armor": self.armor,
+            "physical_fitness": self.physical_fitness,
+            "combat_prowess": self.combat_prowess,
+            "evasive_maneuvers": self.evasive_maneuvers
         }
 
     def add_wound(self, location, wound_desc):
@@ -177,4 +319,18 @@ class Character(ObjectParent, DefaultCharacter):
         if location:
             return self.scars.get(location, [])
         return self.scars
+
+    def gain_experience(self, amount):
+        """
+        Add experience points to the character.
+        
+        Args:
+            amount (int): Amount of experience to gain
+            
+        Returns:
+            int: Total amount of experience after gain
+        """
+        self.db.experience = self.db.experience + amount
+        self.msg(f"You gain {amount} experience points!")
+        return self.db.experience
 

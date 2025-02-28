@@ -2,9 +2,11 @@
 Combat handler script for processing combat actions.
 """
 import random
-from evennia import DefaultScript, create_script
+from evennia import DefaultScript, create_script, GLOBAL_SCRIPTS
 from evennia.utils import lazy_property
 from evennia.utils.utils import time_format
+from typeclasses.hostiles import Hostile
+from evennia.server.sessionhandler import SESSIONS
 import time
 
 class RoundtimeScript(DefaultScript):
@@ -17,7 +19,7 @@ class RoundtimeScript(DefaultScript):
         self.key = "roundtime_script"
         self.desc = "Handles character roundtime"
         self.interval = 1  # Check every second
-        self.persistent = False
+        self.persistent = False  # Ensure script doesn't persist through server restart
         
         # Initialize with defaults, these will be set properly after creation
         self.db.start_time = time.time()
@@ -28,7 +30,10 @@ class RoundtimeScript(DefaultScript):
         if time.time() >= self.db.start_time + self.db.duration:
             # Notify the character roundtime is done
             self.obj.msg("You have recovered.")
+            # Stop and delete the script
             self.stop()
+            self.delete()
+            return
             
     def extend_time(self, seconds):
         """
@@ -47,6 +52,26 @@ class RoundtimeScript(DefaultScript):
             float: Seconds remaining in roundtime
         """
         return max(0, (self.db.start_time + self.db.duration) - time.time())
+        
+    def at_script_stop(self):
+        """Called when script is stopped for any reason."""
+        # Clean up roundtime references
+        if self.obj:
+            if hasattr(self.obj, 'db'):
+                if hasattr(self.obj, 'roundtime'):
+                    self.obj.roundtime = None
+            # Notify the character if online
+            if hasattr(self.obj, 'msg'):
+                self.obj.msg("Your roundtime has expired.")
+        self.delete()
+        
+    def at_server_reload(self):
+        """Called if server reloads."""
+        self.stop()
+        
+    def at_server_shutdown(self):
+        """Called at server shutdown."""
+        self.stop()
 
 class CombatHandler(DefaultScript):
     """
@@ -107,32 +132,87 @@ class CombatHandler(DefaultScript):
 
     def calculate_hit(self, attacker, defender):
         """
-        Calculate if an attack hits based on attacker's attack vs defender's defense + d100.
+        Calculate if an attack hits with two-stage system:
+        1. ATT = agility + speed + weapon_skill + buffs - debuffs + d100
+        2. If initial roll fails, check if power difference can overcome
         
         Args:
             attacker (Object): The attacking character/monster
             defender (Object): The defending character/monster
             
         Returns:
-            bool: Whether the attack hits
+            tuple: (bool hit, dict roll_info)
         """
-        attack_roll = random.randint(1, 100)
-        total_attack = attacker.attack + attack_roll
+        # Calculate attacker's base attack value (before d100)
+        attack_base = int(attacker.agility + 
+                         attacker.speed + 
+                         attacker.weapons)  # buffs/debuffs handled by stat system
         
-        return total_attack > defender.defense
+        # Calculate defender's base defense value
+        shield_bonus = int(defender.shields if hasattr(defender, 'left_hand') and defender.left_hand else 0)
+        defense_base = int(defender.agility + 
+                          defender.speed + 
+                          shield_bonus)  # buffs/debuffs handled by stat system
         
-    def calculate_damage(self, attacker):
+        # Roll d100s
+        attacker_roll = random.randint(1, 100)
+        defender_roll = random.randint(1, 100)
+        
+        # Calculate final values
+        attack_total = attack_base + attacker_roll
+        defense_total = defense_base + defender_roll
+        
+        # Calculate initial end result
+        end_roll = attack_total - defense_total
+        
+        # Calculate power difference (never negative)
+        power_diff = int(max(0, attacker.power - defender.power))
+        
+        # Store all roll information
+        roll_info = {
+            'attack_base': attack_base,
+            'attack_roll': attacker_roll,
+            'attack_total': attack_total,
+            'defense_base': defense_base,
+            'defense_roll': defender_roll,
+            'defense_total': defense_total,
+            'end_roll': end_roll,
+            'power_diff': power_diff,
+            'power_hit': False  # Track if hit was due to power difference
+        }
+        
+        # First check - standard hit
+        if end_roll > 0:
+            return True, roll_info
+            
+        # Second check - power-based hit
+        if end_roll + power_diff >= 1:
+            roll_info['power_hit'] = True
+            return True, roll_info
+            
+        return False, roll_info
+
+    def calculate_damage(self, attacker, power_hit=False, power_diff=0, end_roll=0):
         """
         Calculate base damage for an attack.
+        Damage is linear based on either the endroll for normal hits,
+        or the power difference for power-based hits.
         
         Args:
             attacker (Object): The attacking character/monster
+            power_hit (bool): Whether this was a power-based hit
+            power_diff (int): Power difference if it was a power-based hit
+            end_roll (int): The end roll value for normal hits
             
         Returns:
             int: Amount of damage to deal
         """
-        # Basic damage of 1-10 for now
-        return random.randint(1, 10)
+        if power_hit:
+            # Use power difference as the effective endroll
+            return max(1, power_diff)
+        else:
+            # Use the actual endroll for damage
+            return max(1, end_roll)
         
     def process_attack(self, attacker, defender):
         """
@@ -155,19 +235,40 @@ class CombatHandler(DefaultScript):
         # Set base 5 second roundtime
         roundtime = self.set_roundtime(attacker, 5)
         
-        # Check if attack hits
-        if self.calculate_hit(attacker, defender):
-            damage = self.calculate_damage(attacker)
+        # Check if attack hits and get the roll details
+        hits, roll_info = self.calculate_hit(attacker, defender)
+        
+        # Construct the combat message
+        if roll_info['power_hit']:
+            combat_msg = (
+                f"{attacker.key} powers through {defender.key}'s formidable defenses.\n"
+                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) "
+                f"vs DEF {roll_info['defense_total']} = {roll_info['end_roll']}\n"
+            )
+        else:
+            combat_msg = (
+                f"{attacker.key} attacks {defender.key}\n"
+                f"ATT: {roll_info['attack_base']} + {roll_info['attack_roll']}(d100) "
+                f"vs DEF {roll_info['defense_total']} = {roll_info['end_roll']}\n"
+            )
+        
+        if hits:
+            # Calculate damage based on whether it was a power hit
+            damage = self.calculate_damage(attacker, 
+                                        power_hit=roll_info['power_hit'], 
+                                        power_diff=roll_info['power_diff'],
+                                        end_roll=roll_info['end_roll'])
             defender.take_damage(damage)
             
-            # Announce hit
-            attacker.msg(f"You hit {defender.key} for {damage} damage!")
-            defender.msg(f"{attacker.key} hits you for {damage} damage!")
+            # Complete the message based on hit type
+            if roll_info['power_hit']:
+                combat_msg += f"A powerful strike lands for {damage} damage!"
+            else:
+                combat_msg += f"A clean hit for {damage} damage!"
+            
+            # Announce to all
             if attacker.location:
-                # Announce to others in room
-                for obj in attacker.location.contents:
-                    if obj != attacker and obj != defender and hasattr(obj, 'msg'):
-                        obj.msg(f"{attacker.key} hits {defender.key} for {damage} damage!")
+                attacker.location.msg_contents(combat_msg)
                         
             # Check for death
             if defender.current_health <= 0:
@@ -176,24 +277,18 @@ class CombatHandler(DefaultScript):
             return True, damage, roundtime
             
         else:
-            # Announce miss
-            attacker.msg(f"You miss {defender.key}!")
-            defender.msg(f"{attacker.key} misses you!")
+            # Complete the message for a miss
+            combat_msg += "a miss."
+            
+            # Announce to all
             if attacker.location:
-                # Announce to others in room
-                for obj in attacker.location.contents:
-                    if obj != attacker and obj != defender and hasattr(obj, 'msg'):
-                        obj.msg(f"{attacker.key} misses {defender.key}!")
+                attacker.location.msg_contents(combat_msg)
                         
             return False, 0, roundtime
             
     def handle_death(self, attacker, defender):
         """
         Handle a combatant's death.
-        
-        Args:
-            attacker (Object): The killing character/monster
-            defender (Object): The dying character/monster
         """
         if hasattr(defender, 'experience'):
             # Award XP if defender has experience value
@@ -203,8 +298,29 @@ class CombatHandler(DefaultScript):
         if attacker.location:
             attacker.location.msg_contents(f"{defender.key} has been slain by {attacker.key}!")
             
-        # Handle death cleanup
-        defender.delete()
+        # If it's a hostile, turn it into a temporary corpse
+        if isinstance(defender, Hostile):
+            # Change the name to indicate it's a corpse
+            original_name = defender.key
+            defender.key = f"the body of {original_name}"
+            defender.db.corpse = True  # Mark as a corpse
+            
+            # Set locks to prevent interaction
+            defender.locks.add("get:false();delete:perm(Wizards);puppet:false()")
+            
+            # Disable combat-related attributes
+            defender.db.inactive = True
+            
+            # Create corpse deletion script
+            create_script(
+                "scripts.combat_handler.CorpseScript",
+                obj=defender,
+                persistent=False,
+                autostart=True
+            )
+        else:
+            # For non-hostiles (like players), just handle normally
+            defender.delete()
         
     def at_repeat(self):
         """
@@ -212,4 +328,64 @@ class CombatHandler(DefaultScript):
         Clean up old roundtimes to prevent memory bloat.
         """
         # Nothing to do for now - will be used for more complex combat tracking later
+        pass
+
+    def get_combat_details(self, attacker, defender, attacker_roll, defender_roll, endroll, power_diff):
+        """
+        Generate a detailed breakdown of combat calculations.
+        """
+        shield_bonus = defender.shields if hasattr(defender, 'left_hand') and defender.left_hand else 0
+        
+        attacker_msg = (
+            f"\nAttack Roll Breakdown:"
+            f"\n Base Attack: {attacker.attack}"
+            f"\n Weapon Skill: +{attacker.weapons}"
+            f"\n Your Roll: +{attacker_roll}"
+            f"\n vs"
+            f"\n Defense: {defender.defense}"
+            f"\n Shield Bonus: +{shield_bonus}"
+            f"\n Their Roll: +{defender_roll}"
+            f"\n = Final Roll: {endroll}"
+        )
+        
+        defender_msg = (
+            f"\nDefense Roll Breakdown:"
+            f"\n Their Attack: {attacker.attack}"
+            f"\n Their Weapon Skill: +{attacker.weapons}"
+            f"\n Their Roll: +{attacker_roll}"
+            f"\n vs"
+            f"\n Your Defense: {defender.defense}"
+            f"\n Shield Bonus: +{shield_bonus}"
+            f"\n Your Roll: +{defender_roll}"
+            f"\n = Final Roll: {endroll}"
+        )
+        
+        room_msg = f" (Roll: {endroll})"
+        
+        return attacker_msg, defender_msg, room_msg
+
+class CorpseScript(DefaultScript):
+    """A script that deletes a corpse after a delay."""
+    
+    def at_script_creation(self):
+        """Set up the script."""
+        self.key = "corpse_script"
+        self.desc = "Deletes a corpse after delay"
+        self.interval = 20  # 20 second delay
+        self.persistent = False
+        self.repeats = 1    # Run only once
+        self.start_delay = True  # Important: This makes it wait before first repeat
+        
+    def at_repeat(self):
+        """Called after the 20-second delay."""
+        if self.obj and hasattr(self.obj, 'location'):
+            # Announce the corpse disappearing
+            self.obj.location.msg_contents(f"{self.obj.key} crumbles to dust.")
+            # Delete the corpse
+            self.obj.delete()
+        self.stop()
+
+    def at_start(self):
+        """Called when script starts running."""
+        # We don't need to do anything here, just wait for the interval
         pass

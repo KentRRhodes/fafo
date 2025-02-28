@@ -16,6 +16,7 @@ from commands.builder import (CmdBuildRoom, CmdBuildGrid, CmdBuildMaze,
 from commands.compass import (CmdNorth, CmdSouth, CmdEast, CmdWest,
                             CmdNortheast, CmdNorthwest, CmdSoutheast, CmdSouthwest)
 from commands.combat import CmdKill
+from commands import stat_effects
 
 class CompassCmdSet(CmdSet):
     """
@@ -89,6 +90,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CompassCmdSet)  # Add navigation commands (available to all)
         self.add(BuilderCmdSet)  # Add builder commands (permission controlled)
         self.add(CmdKill())
+        self.add(stat_effects.CmdEffect())
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
     """

@@ -17,6 +17,7 @@ at_server_cold_stop()
 
 """
 
+from evennia import create_script, GLOBAL_SCRIPTS
 
 def at_server_init():
     """
@@ -30,7 +31,18 @@ def at_server_start():
     This is called every time the server starts up, regardless of
     how it was shut down.
     """
-    pass
+    # Create the stat effect handler if it doesn't exist
+    if not GLOBAL_SCRIPTS.stat_effect_handler:
+        create_script('scripts.stat_handler.StatEffectHandler',
+                     key="stat_effect_handler",
+                     persistent=True,
+                     autostart=True)
+                     
+    # Clean up any lingering roundtime scripts from previous shutdown
+    from evennia.scripts.models import ScriptDB
+    roundtime_scripts = ScriptDB.objects.filter(db_typeclass_path__contains="RoundtimeScript")
+    for script in roundtime_scripts:
+        script.delete()
 
 
 def at_server_stop():
